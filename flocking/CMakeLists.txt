@@ -1,6 +1,6 @@
-include(CheckCXXCompilerFlag)
-
 cmake_minimum_required(VERSION 4.2.3)
+
+include(CheckCXXCompilerFlag)
 
 # -- PROJECT CONFIGURATION ----------------------------------------------------
 project(
@@ -14,12 +14,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if (APPLE)
-    list(APPEND CMAKE_PREFIX_PATH "/opt/homebrew" "/usr/local" "/opt/homebrew/opt/qt")
+    list(APPEND CMAKE_PREFIX_PATH "/opt/homebrew" "/opt/homebrew/opt/qt")
 endif()
 
 # Rely on Boost to find itself instead of FindBoost
 if (POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
+endif()
+
+if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
 # -- ADDRESS SANITIZER CONFIGURATION ------------------------------------------
@@ -30,7 +34,9 @@ else()
 endif()
 
 # Check if address sanitizer is supported by the compiler
+set(CMAKE_REQUIRED_LINK_OPTIONS ${ASAN_FLAG})
 check_cxx_compiler_flag(${ASAN_FLAG} ASAN_SUPPORTED)
+unset(CMAKE_REQUIRED_LINK_OPTIONS)
 
 # -- TESTING CONFIGURATION ----------------------------------------------------
 include(CTest)
@@ -57,12 +63,12 @@ add_executable(swrm_flocking src/main.cpp)
 
 # Add headers and libraries to the object library
 target_include_directories(swrm_flocking_core PUBLIC 
-    ${PROJECT_SOURCE_DIR}include
+    ${PROJECT_SOURCE_DIR}/include
 )
 target_link_libraries(swrm_flocking_core PUBLIC
     CGAL::CGAL
     CGAL::CGAL_Qt6
-    Boost:boost
+    Boost::boost
     ${MPFR_LIBRARIES}
 )
 
@@ -81,6 +87,4 @@ target_compile_definitions(swrm_flocking_core PUBLIC
 if (ASAN_SUPPORTED)
     target_compile_options(swrm_flocking_core PUBLIC ${ASAN_FLAG})
     target_link_options(swrm_flocking_core PUBLIC ${ASAN_FLAG})
-    target_compile_options(swrm_flocking PRIVATE ${ASAN_FLAG})
-    target_link_options(swrm_flocking PRIVATE ${ASAN_FLAG})
 endif()
