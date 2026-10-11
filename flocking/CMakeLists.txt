@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 4.2.3)
+cmake_minimum_required(VERSION 3.22.1)
 
 include(CheckCXXCompilerFlag)
 
@@ -22,6 +22,11 @@ if (POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
 endif()
 
+# Forward timestamps for URL fetching
+if (POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW)
+endif()
+
 if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
@@ -39,10 +44,9 @@ check_cxx_compiler_flag(${ASAN_FLAG} ASAN_SUPPORTED)
 unset(CMAKE_REQUIRED_LINK_OPTIONS)
 
 # -- PROJECT DEPENDENCIES -----------------------------------------------------
-find_package(Qt6 REQUIRED COMPONENTS Widgets OpenGL)
-find_package(CGAL REQUIRED COMPONENTS Qt6)
+# TODO: Link to ROS2 libraries as needed
+find_package(CGAL REQUIRED)
 find_package(Boost REQUIRED)
-find_package(MPFR REQUIRED)
 
 # -- LINK PROJECT DEPENDENCIES ------------------------------------------------
 # All non-main files should be linked as an object library for tests
@@ -59,7 +63,6 @@ target_include_directories(swrm_flocking_core PUBLIC
 )
 target_link_libraries(swrm_flocking_core PUBLIC
     CGAL::CGAL
-    CGAL::CGAL_Qt6
     Boost::boost
     ${MPFR_LIBRARIES}
 )
@@ -67,12 +70,6 @@ target_link_libraries(swrm_flocking_core PUBLIC
 # Link to main executable
 target_link_libraries(swrm_flocking PRIVATE
     swrm_flocking_core
-)
-
-# CGAL compile-time definitions
-target_compile_definitions(swrm_flocking_core PUBLIC
-    CGAL_USE_BASIC_VIEWER
-    CGAL_CHECK_EXPENSIVE
 )
 
 # Set ASAN for both the core library and the main executable
