@@ -1,4 +1,4 @@
-#include "utilities.hpp"
+#include <swrm_flocking_core/utilities.hpp>
 
 int main() {
     print_hello();

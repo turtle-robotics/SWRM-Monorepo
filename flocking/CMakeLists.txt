@@ -38,14 +38,6 @@ set(CMAKE_REQUIRED_LINK_OPTIONS ${ASAN_FLAG})
 check_cxx_compiler_flag(${ASAN_FLAG} ASAN_SUPPORTED)
 unset(CMAKE_REQUIRED_LINK_OPTIONS)
 
-# -- TESTING CONFIGURATION ----------------------------------------------------
-include(CTest)
-
-if (BUILD_TESTING)
-    enable_testing()
-    add_subdirectory(tests)
-endif()
-
 # -- PROJECT DEPENDENCIES -----------------------------------------------------
 find_package(Qt6 REQUIRED COMPONENTS Widgets OpenGL)
 find_package(CGAL REQUIRED COMPONENTS Qt6)
@@ -55,7 +47,7 @@ find_package(MPFR REQUIRED)
 # -- LINK PROJECT DEPENDENCIES ------------------------------------------------
 # All non-main files should be linked as an object library for tests
 add_library(swrm_flocking_core OBJECT
-    src/utilities.cpp
+    src/swrm_flocking_core/utilities.cpp
 )
 
 # Main executable 
@@ -88,3 +80,12 @@ if (ASAN_SUPPORTED)
     target_compile_options(swrm_flocking_core PUBLIC ${ASAN_FLAG})
     target_link_options(swrm_flocking_core PUBLIC ${ASAN_FLAG})
 endif()
+
+# -- TESTING CONFIGURATION ----------------------------------------------------
+include(CTest)
+
+if (BUILD_TESTING)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
+
