@@ -1,0 +1,6 @@
+# MacOS Artifacts
+**/.DS_Store
+
+# CMake generated files
+.cache
+build
