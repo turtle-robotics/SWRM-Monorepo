@@ -1,6 +1,8 @@
-#ifndef UTILITIES_HPP
-#define UTILITIES_HPP
+#ifndef SWRM_FLOCKING_UTILITIES_HPP
+#define SWRM_FLOCKING_UTILITIES_HPP
 
-void print_hello();
+#include "swrm_flocking_core/types.hpp"
 
-#endif // UTILITIES_HPP
+void print_hpscalar(hpscalar value);
+
+#endif // SWRM_FLOCKING_UTILITIES_HPP

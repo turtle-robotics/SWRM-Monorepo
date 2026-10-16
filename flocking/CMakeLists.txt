@@ -45,8 +45,10 @@ unset(CMAKE_REQUIRED_LINK_OPTIONS)
 
 # -- PROJECT DEPENDENCIES -----------------------------------------------------
 # TODO: Link to ROS2 libraries as needed
-find_package(CGAL REQUIRED)
 find_package(Boost REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GMP REQUIRED IMPORTED_TARGET gmp)
+pkg_check_modules(MPFR REQUIRED IMPORTED_TARGET mpfr)
 
 # -- LINK PROJECT DEPENDENCIES ------------------------------------------------
 # All non-main files should be linked as an object library for tests
@@ -62,9 +64,9 @@ target_include_directories(swrm_flocking_core PUBLIC
     ${PROJECT_SOURCE_DIR}/include
 )
 target_link_libraries(swrm_flocking_core PUBLIC
-    CGAL::CGAL
     Boost::boost
-    ${MPFR_LIBRARIES}
+    PkgConfig::MPFR
+    PkgConfig::GMP
 )
 
 # Link to main executable
