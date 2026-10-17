@@ -25,8 +25,7 @@ namespace swrm::flocking {
         template<typename... Args>
         directed_pointer(Args&&... args) : 
                 ptr(std::make_shared<T>(std::forward<Args>(args)...)), 
-                mutex(std::make_shared<std::shared_mutex>()) {
-        }
+                mutex(std::make_shared<std::shared_mutex>()) {}
 
     public:
         // Make directed pointer non-copyable but movable
@@ -59,12 +58,16 @@ namespace swrm::flocking {
         directed_guard<T, std::unique_lock<std::shared_mutex>> lock() {
             return directed_guard<T, std::unique_lock<std::shared_mutex>>(ptr, std::unique_lock<std::shared_mutex>(*mutex));
         }
+
+        unsigned int reader_count() const {
+            return this->ptr.use_count() - 1;
+        }
         
         // Not needed, but here for Rule of Five compliance
         ~directed_pointer() {}
         
-        template <typename... Args>
-        friend directed_pointer<T> make_directed(Args&&... args);
+        template <typename U, typename... Args>
+        friend directed_pointer<U> make_directed(Args&&... args);
         friend class directed_reader<T>;
     };
     
@@ -101,6 +104,10 @@ namespace swrm::flocking {
         directed_guard<T, std::shared_lock<std::shared_mutex>> lock() const {
             return directed_guard<const T, std::shared_lock<std::shared_mutex>>(ptr, std::shared_lock<std::shared_mutex>(*mutex));
         }
+
+        unsigned int use_count() const {
+            return this->ptr.use_count();
+        }
         
         // Not needed, but here for Rule of Five compliance
         ~directed_reader() {}
@@ -123,11 +130,11 @@ namespace swrm::flocking {
         directed_guard& operator=(const directed_guard&) = delete;
         directed_guard& operator=(directed_guard&& other) = delete;
 
-        T* operator->() const {
-            return ptr;
+        T& operator->() {
+            return *ptr;
         }
 
-        T* operator*() const {
+        T& operator*() {
             return *ptr;
         }
 

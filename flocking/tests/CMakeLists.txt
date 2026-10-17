@@ -13,7 +13,7 @@ FetchContent_MakeAvailable(googletest)
 # -- TEST EXECUTABLE ----------------------------------------------------------
 # Create test executable
 add_executable(swrm_flocking_tests
-    test_utilities.cpp
+    test_directional_pointer.cpp
 )
 
 # Link library to test and GTest
@@ -26,6 +26,12 @@ target_link_libraries(swrm_flocking_tests PRIVATE
 if (ASAN_SUPPORTED)
     target_compile_options(swrm_flocking_tests PRIVATE ${ASAN_FLAG})
     target_link_options(swrm_flocking_tests PRIVATE ${ASAN_FLAG})
+endif()
+
+# Add TSAN flags to the test executable if supported
+if (TSAN_SUPPORTED)
+    target_compile_options(swrm_flocking_tests PRIVATE ${TSAN_FLAG})
+    target_link_options(swrm_flocking_tests PRIVATE ${TSAN_FLAG})
 endif()
 
 # Discover and register tests with CTest
