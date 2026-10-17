@@ -43,6 +43,18 @@ set(CMAKE_REQUIRED_LINK_OPTIONS ${ASAN_FLAG})
 check_cxx_compiler_flag(${ASAN_FLAG} ASAN_SUPPORTED)
 unset(CMAKE_REQUIRED_LINK_OPTIONS)
 
+# -- THREAD SANIFIER CONFIGURATION --------------------------------------------
+if (MSVC)
+    set(TSAN_FLAG "/fsanitize=thread")
+else()
+    set(TSAN_FLAG "-fsanitize=thread")
+endif()
+
+# Check if thread sanitizer is supported by the compiler
+set(CMAKE_REQUIRED_LINK_OPTIONS ${TSAN_FLAG})
+check_cxx_compiler_flag(${TSAN_FLAG} TSAN_SUPPORTED)
+unset(CMAKE_REQUIRED_LINK_OPTIONS)
+
 # -- PROJECT DEPENDENCIES -----------------------------------------------------
 # TODO: Link to ROS2 libraries as needed
 find_package(Boost REQUIRED)
@@ -80,6 +92,12 @@ target_link_libraries(swrm_flocking PRIVATE
 if (ASAN_SUPPORTED)
     target_compile_options(swrm_flocking_core PUBLIC ${ASAN_FLAG})
     target_link_options(swrm_flocking_core PUBLIC ${ASAN_FLAG})
+endif()
+
+# Set TSAN for both the core library and the main executable
+if (TSAN_SUPPORTED)
+    target_compile_options(swrm_flocking_core PUBLIC ${TSAN_FLAG})
+    target_link_options(swrm_flocking_core PUBLIC ${TSAN_FLAG})
 endif()
 
 # -- TESTING CONFIGURATION ----------------------------------------------------
