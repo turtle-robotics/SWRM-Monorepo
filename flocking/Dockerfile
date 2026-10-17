@@ -7,7 +7,9 @@ ADD . /app
 WORKDIR /app
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libgmp-dev libmpfr-dev libboost-all-dev ros-humble-turtlesim && \
+    apt-get install -y --no-install-recommends \
+    libgmp-dev libmpfr-dev libboost-all-dev libeigen3-dev \
+    ros-humble-turtlesim && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
