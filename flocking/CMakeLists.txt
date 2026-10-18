@@ -61,10 +61,7 @@ option(USE_ASAN "Enable Address Sanitizer" FALSE)
 # -- PROJECT DEPENDENCIES -----------------------------------------------------
 # TODO: Link to ROS2 libraries as needed
 find_package(Boost REQUIRED)
-find_package(PkgConfig REQUIRED)
 find_package(Eigen3 REQUIRED NO_MODULE)
-pkg_check_modules(GMP REQUIRED IMPORTED_TARGET gmp)
-pkg_check_modules(MPFR REQUIRED IMPORTED_TARGET mpfr)
 
 # -- LINK PROJECT DEPENDENCIES ------------------------------------------------
 # All non-main files should be linked as an object library for tests
@@ -81,8 +78,6 @@ target_include_directories(swrm_flocking_core PUBLIC
 )
 target_link_libraries(swrm_flocking_core PUBLIC
     Boost::boost
-    PkgConfig::MPFR
-    PkgConfig::GMP
     Eigen3::Eigen
 )
 
