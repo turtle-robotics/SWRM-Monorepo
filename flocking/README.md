@@ -24,8 +24,15 @@ To run the code, follow these steps:
 There are two build arguments that can be passed to the Docker build command:
 - `BUILD_TESTING`: `true` if the test code should be built, `false` otherwise. 
 Default is `false`.
-- `IGNORE_MAIN`: `true` if the main code shouldn't be executed, `false` otherwise. 
-Default is `false`.
+- `IGNORE_MAIN`: `true` if the main code shouldn't be executed, `false` 
+otherwise. Default is `false`.
+- `USE_ASAN`: `true` if the code should be built with AddressSanitizer, `false` 
+if it should be built with ThreadSanitizer (both of these are mutually 
+exclusive) Default is `false`.
+
+> When testing the code, it's recommended to test with `USE_ASAN` as both 
+`true` and `false` in separate testing runs to ensure that the code is free of 
+both memory and thread errors.
 
 These can be passed to the Docker build command as follows:
 ```
