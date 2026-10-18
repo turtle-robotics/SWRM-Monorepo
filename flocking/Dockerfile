@@ -2,6 +2,7 @@ FROM ros:humble
 
 ARG BUILD_TESTING=false
 ARG IGNORE_MAIN=false
+ARG USE_ASAN=false
 
 ADD . /app
 WORKDIR /app
@@ -13,7 +14,7 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-RUN cmake -S . -B build -DBUILD_TESTING=${BUILD_TESTING} && \
+RUN cmake -S . -B build -DBUILD_TESTING=${BUILD_TESTING} -DUSE_ASAN=${USE_ASAN} && \
     cmake --build build
 
 RUN chmod +x /app/scripts/dockerfile_entrypoint.sh

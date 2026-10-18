@@ -55,6 +55,9 @@ set(CMAKE_REQUIRED_LINK_OPTIONS ${TSAN_FLAG})
 check_cxx_compiler_flag(${TSAN_FLAG} TSAN_SUPPORTED)
 unset(CMAKE_REQUIRED_LINK_OPTIONS)
 
+# -- BUILD ARGUMENT HANDLING --------------------------------------------------
+option(USE_ASAN "Enable Address Sanitizer" FALSE)
+
 # -- PROJECT DEPENDENCIES -----------------------------------------------------
 # TODO: Link to ROS2 libraries as needed
 find_package(Boost REQUIRED)
@@ -89,13 +92,11 @@ target_link_libraries(swrm_flocking PRIVATE
 )
 
 # Set ASAN for both the core library and the main executable
-if (ASAN_SUPPORTED)
+# Set TSAN if ASAN isn't used because they are mutually exclusive
+if (ASAN_SUPPORTED AND USE_ASAN)
     target_compile_options(swrm_flocking_core PUBLIC ${ASAN_FLAG})
     target_link_options(swrm_flocking_core PUBLIC ${ASAN_FLAG})
-endif()
-
-# Set TSAN for both the core library and the main executable
-if (TSAN_SUPPORTED)
+elseif (TSAN_SUPPORTED)
     target_compile_options(swrm_flocking_core PUBLIC ${TSAN_FLAG})
     target_link_options(swrm_flocking_core PUBLIC ${TSAN_FLAG})
 endif()

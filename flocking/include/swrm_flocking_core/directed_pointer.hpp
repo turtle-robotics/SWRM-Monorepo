@@ -101,7 +101,7 @@ namespace swrm::flocking {
             return *this;
         }
 
-        directed_guard<T, std::shared_lock<std::shared_mutex>> lock() const {
+        directed_guard<const T, std::shared_lock<std::shared_mutex>> lock() const {
             return directed_guard<const T, std::shared_lock<std::shared_mutex>>(ptr, std::shared_lock<std::shared_mutex>(*mutex));
         }
 
@@ -125,7 +125,9 @@ namespace swrm::flocking {
 
     public:
         directed_guard(const directed_guard&) = delete;
-        directed_guard(directed_guard&& other) = delete;
+        directed_guard(directed_guard&& other) : 
+                ptr(std::move(other.ptr)), 
+                lock(std::move(other.lock)) {}
 
         directed_guard& operator=(const directed_guard&) = delete;
         directed_guard& operator=(directed_guard&& other) = delete;
@@ -137,9 +139,11 @@ namespace swrm::flocking {
         T& operator*() {
             return *ptr;
         }
-
-        friend class directed_pointer<T>;
-        friend class directed_reader<T>;
+        
+        template <typename U>
+        friend class directed_pointer;
+        template <typename U>
+        friend class directed_reader;
     };
     
     template <typename T, typename... Args>
@@ -147,5 +151,6 @@ namespace swrm::flocking {
         return directed_pointer<T>(std::forward<Args>(args)...);
     }
 }
+
 
 #endif // SWRM_FLOCKING_DIRECTED_POINTER_HPP

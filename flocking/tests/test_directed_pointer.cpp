@@ -36,6 +36,7 @@ TEST(TestDirectedPointer, MoveAssignWithoutActiveReaders) {
         swrm::flocking::directed_pointer<int> ptr2 = swrm::flocking::make_directed<int>(67);
 
         ptr1 = std::move(ptr2);
+        check_value = *ptr1.lock();
     }
     
     // If no abort occurs, memory errors aren't present so just check that the value is correct
