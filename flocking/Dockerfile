@@ -1,4 +1,4 @@
-FROM ros:humble
+FROM ros:jazzy
 
 ARG BUILD_TESTING=false
 ARG IGNORE_MAIN=false
@@ -10,7 +10,7 @@ WORKDIR /app
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     libgmp-dev libmpfr-dev libboost-all-dev libeigen3-dev \
-    ros-humble-turtlesim && \
+    ros-jazzy-turtlesim && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
