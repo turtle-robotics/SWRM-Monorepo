@@ -66,7 +66,7 @@ find_package(Eigen3 REQUIRED NO_MODULE)
 # -- LINK PROJECT DEPENDENCIES ------------------------------------------------
 # All non-main files should be linked as an object library for tests
 add_library(swrm_flocking_core OBJECT
-    src/swrm_flocking_core/utilities.cpp
+    src/swrm_flocking_core/sigma_norm.cpp
 )
 
 # Main executable 
