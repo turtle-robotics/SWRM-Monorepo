@@ -74,7 +74,7 @@ TEST(TestSigmaNorm, SigmaNormAtZero) {
 
 TEST(TestSigmaNorm, SigmaNormGradient) {
     swrm::flocking::vector2d z(16.0, 12.0);
-    swrm::flocking::hpscalar denominator = boost::math::rsqrt(swrm::flocking::hpscalar(21.0));
+    swrm::flocking::hpscalar denominator = boost::math::rsqrt(swrm::flocking::hpscalar(41.0));
     swrm::flocking::vector2d expected_gradient = denominator * z;
     swrm::flocking::vector2d computed_gradient = swrm::flocking::sigma_norm_gradient(z);
     swrm::flocking::hpscalar epsilon = 1e-6;
@@ -90,7 +90,7 @@ TEST(TestSigmaNorm, SigmaNormGradient) {
 
 TEST(TestSigmaNorm, SigmaNormNegativeVectorGradient) {
     swrm::flocking::vector2d z(-16.0, -12.0);
-    swrm::flocking::hpscalar denominator = boost::math::rsqrt(swrm::flocking::hpscalar(21.0));
+    swrm::flocking::hpscalar denominator = boost::math::rsqrt(swrm::flocking::hpscalar(41.0));
     swrm::flocking::vector2d expected_gradient = denominator * z;
     swrm::flocking::vector2d computed_gradient = swrm::flocking::sigma_norm_gradient(z);
     swrm::flocking::hpscalar epsilon = 1e-6;
@@ -108,7 +108,7 @@ TEST(TestSigmaNorm, SigmaNormNegativeVectorGradient) {
 
 TEST(TestSigmaNorm, SigmaNormMixedVectorGradient) {
     swrm::flocking::vector2d z(-16.0, 12.0);
-    swrm::flocking::hpscalar denominator = boost::math::rsqrt(swrm::flocking::hpscalar(21.0));
+    swrm::flocking::hpscalar denominator = boost::math::rsqrt(swrm::flocking::hpscalar(41.0));
     swrm::flocking::vector2d expected_gradient = denominator * z;
     swrm::flocking::vector2d computed_gradient = swrm::flocking::sigma_norm_gradient(z);
     swrm::flocking::hpscalar epsilon = 1e-6;
@@ -164,8 +164,8 @@ TEST(TestSigmaNorm, BoundedSigmoidal) {
 
 TEST(TestSigmaNorm, BoundedSigmoidalNegativeVector) {
     swrm::flocking::vector2d z(
-        boost::multiprecision::sqrt(swrm::flocking::hpscalar(-3.0)), 
-        boost::multiprecision::sqrt(swrm::flocking::hpscalar(-5.0))
+        -boost::multiprecision::sqrt(swrm::flocking::hpscalar(3.0)), 
+        -boost::multiprecision::sqrt(swrm::flocking::hpscalar(5.0))
     );
     swrm::flocking::hpscalar denominator = 1.0 / swrm::flocking::hpscalar(3.0);
     swrm::flocking::vector2d expected_value = denominator * z;
@@ -185,7 +185,7 @@ TEST(TestSigmaNorm, BoundedSigmoidalNegativeVector) {
 
 TEST(TestSigmaNorm, BoundedSigmoidalMixedVector) {
     swrm::flocking::vector2d z(
-        boost::multiprecision::sqrt(swrm::flocking::hpscalar(-3.0)), 
+        -boost::multiprecision::sqrt(swrm::flocking::hpscalar(3.0)), 
         boost::multiprecision::sqrt(swrm::flocking::hpscalar(5.0))
     );
     swrm::flocking::hpscalar denominator = 1.0 / swrm::flocking::hpscalar(3.0);
