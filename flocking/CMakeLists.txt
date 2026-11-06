@@ -71,6 +71,7 @@ add_library(swrm_flocking_core OBJECT
     src/swrm_flocking_core/smooth_bump_function.cpp
     src/swrm_flocking_core/uneven_sigmoidal_function.cpp
     src/swrm_flocking_core/inter_agent_action_function.cpp
+    src/swrm_flocking_core/gamma_agent.cpp
 )
 
 # Main executable 
