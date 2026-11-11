@@ -1,0 +1,53 @@
+{
+  "checked_utc": "2026-11-10T19:56:25.411823+00:00",
+  "purpose": "V5 timed directional speed drive with bench-verified type1 polarity0 block boot defaults",
+  "build_pass": true,
+  "host_tests_pass": true,
+  "source_sha256": {
+    "legacy-motor-test/src/main.cpp": "76554c4fee60938cb72f32c0d1ca09e28f64ef91db8a1d10d2f9c9a0501b33f2",
+    "legacy-motor-test/platformio.ini": "b523e2ca55269cc3dd10c75cfc7f3ed1e28089160e673b3c7373287e1b50b1fe",
+    "test/host/legacy_tests.cpp": "59a7d7a43f6bec19a5528d77c925576e13e3e45b849195fa374d658a51407442"
+  },
+  "reference_original": "/Users/calvinfisher/Desktop/SWRM TURTLE/SWRM_Leds-master/src/main.cpp",
+  "reference_original_sha256": "d4842bb274575914f6a450eadf54f1a954ceb5704fedbb681315e3eadad577e1",
+  "serial_port_opened_by_agent": false,
+  "hardware_uploaded_by_agent": false,
+  "physical_response_unverified": true,
+  "shared_mock_sha256": "082ce8dcfd39c22a94a57a36e9ff3bdc5561c24419282aa356f90852802eac9a",
+  "runtime_settings_tests": [
+    "no writes on settings edit",
+    "requires init after edit",
+    "type 2 and polarity 0/1",
+    "block payload 00 0A 00 00",
+    "armed/busy edits rejected",
+    "bounds rejected"
+  ],
+  "pwm_checks": [
+    "M2-M1-M2 history",
+    "refresh complete snapshots",
+    "PWM zero stop without speed writes",
+    "duty cap",
+    "fault stop/retry",
+    "armed edits rejected"
+  ],
+  "read_diagnostic_checks": [
+    "reported millivolts",
+    "four signed counts including INT32_MIN/MAX",
+    "short reads never print values",
+    "failed pointer selection",
+    "no motor payload",
+    "reject while armed/running"
+  ],
+  "direction_checks": [
+    "verified startup defaults",
+    "forward left reversed packets",
+    "fresh full snapshots M4zero",
+    "diagonal limit",
+    "geometry edit gating",
+    "arm requirement",
+    "invalid/NaN rejection",
+    "PWM mode rejection",
+    "deadline and emergency stop"
+  ],
+  "physical_status": "User verified single channels and reverse M2/type1/polarity0/block; combined directional movement unverified"
+}

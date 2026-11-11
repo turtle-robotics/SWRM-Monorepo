@@ -1,0 +1,46 @@
+{
+  "checked_utc": "2026-11-10T18:12:24.811922+00:00",
+  "board": "esp32dev",
+  "platform": "espressif32@8.0.0",
+  "clean_build_pass": false,
+  "source_sha256": {
+    "src/main.cpp": "1ef513869110ea9f8882c7fc9a9715d10e972296d2af528f8e68e9388ba77394",
+    "include/robot_config.h": "8c7fdcb9610d8b869638eec22735ca49e05898802ac07d8dcaf6f717076c08b7",
+    "include/kiwi_math.h": "0517ad5323e7d217f24a568676b92ce5e0fdcacbef27b66ce1ec08aa3da4d973",
+    "platformio.ini": "3d3c4dda94a7b0d76f66297aa39106a605fbe8072658d9ec12178c23392794a2"
+  },
+  "hardware_uploaded": false,
+  "physical_motion_tested": false,
+  "build_core_note": "Used existing installed packages with a temporary writable PlatformIO metadata directory, because the agent sandbox cannot write ~/.platformio.",
+  "host_tests_pass": true,
+  "host_compiler_checks": [
+    "-Wall",
+    "-Wextra",
+    "-Wpedantic",
+    "-Werror",
+    "-fsanitize=address,undefined"
+  ],
+  "host_test_sha256": "99bd7b5dacdbea64ce6245db3dbd825772b93bdea91b51326aafd811bf56181c",
+  "build_pass": true,
+  "build_note": "ESP32 rebuild after extending direct single-wheel pulse/jog diagnostics to 5000ms, with refreshes/countdown and unchanged magnitude caps.",
+  "serial_editing_tests": [
+    "Backspace",
+    "DEL",
+    "Ctrl+U",
+    "NUL rejection",
+    "escape rejection",
+    "stop in discarded input",
+    "I2C error retention and init clearing"
+  ],
+  "long_motor_test_checks": [
+    "3000ms deadline with output held before deadline",
+    "5000ms accepted",
+    "5001ms rejected",
+    "unselected channels zero",
+    "countdown text",
+    "stop and ! interrupt",
+    "mid-test I2C failure disarms",
+    "millis wrap",
+    "magnitude caps unchanged"
+  ]
+}

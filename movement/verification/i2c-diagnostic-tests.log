@@ -1,0 +1,1 @@
+PASS: diagnostic probes only, no motor register writes, ten samples, then quiet; failure reported.

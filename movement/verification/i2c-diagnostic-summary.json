@@ -1,0 +1,16 @@
+{
+  "checked_utc": "2026-11-10T18:20:47.515910+00:00",
+  "purpose": "Address-only I2C diagnostic; no motor register payloads",
+  "build_pass": true,
+  "host_tests_pass": true,
+  "source_sha256": {
+    "i2c-diagnostic/src/main.cpp": "51cee3519cfac6029045f72553008207420f70c0cdab6069fd5f71c74f2c14e6",
+    "i2c-diagnostic/platformio.ini": "a70a142ebdf15c054d8014fa9952e2998e521d91e32f250000fd99c880599033",
+    "include/robot_config.h": "8c7fdcb9610d8b869638eec22735ca49e05898802ac07d8dcaf6f717076c08b7",
+    "include/kiwi_math.h": "0517ad5323e7d217f24a568676b92ce5e0fdcacbef27b66ce1ec08aa3da4d973",
+    "test/host/diagnostic_tests.cpp": "8f54fffe7a02cbb7c6731313885904950523fb1759c236b1eb3aa5889aa78b5b"
+  },
+  "serial_port_opened_by_agent": false,
+  "hardware_uploaded_by_agent": false,
+  "physical_response_unverified": true
+}

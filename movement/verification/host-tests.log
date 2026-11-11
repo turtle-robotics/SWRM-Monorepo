@@ -1,0 +1,1 @@
+PASS: uncalibrated timed PWM, raw motor patterns, parsing, movement simulation, limits, deadlines, encoder faults, stops, wraparound.

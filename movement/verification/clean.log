@@ -1,0 +1,6 @@
+Processing esp32dev (platform: espressif32@8.0.0; board: esp32dev; framework: arduino)
+--------------------------------------------------------------------------------
+Verbose mode can be enabled via `-v, --verbose` option
+Removing .pio/build/esp32dev
+Done cleaning
+========================= [SUCCESS] Took 0.40 seconds =========================
