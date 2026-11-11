@@ -1,4 +1,34 @@
 # Run relative kiwi-drive moves today
+## Quickstart
+As of 11/10/2026, legacy-motor-code has been updated and the robot can now move in straight pathways! Please make sure that whenever you are testing movement, you upload the source code from **legacy-motor-code** and not the source code from the root of this subfolder.
+
+### Uploading
+Upload either through your IDE or by running the following:
+```bash
+cd /Path/to/repo/
+pio run --project-dir=legacy-motor-test --target=compiledb
+```
+Windows:
+```bash
+pio run --project-dir=legacy-motor-test --target upload --upload-port /dev/cu.usbserial-xxxx
+```
+Linux:
+```bash
+pio run --project-dir=legacy-motor-test --target upload --upload-port /dev/ttyUSBx
+```
+Where x is replaced by whichever digit(s) are in the output of
+```bash
+pio device list
+```
+
+### Movement testing
+For basic movement testing, the standard workflow looks like this:
+```bash
+init
+run
+drive x y
+```
+Where x and y can be -1, 0, or 1
 
 **New to Terminal or PlatformIO?** Use the detailed [step-by-step walkthrough](WALKTHROUGH.md), including connection, exact commands, monitor setup, notes and troubleshooting.
 
