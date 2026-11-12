@@ -17,6 +17,7 @@ add_executable(swrm_flocking_tests
     test_sigma_norm.cpp
     test_smooth_bump_function.cpp
     test_uneven_sigmoidal_function.cpp
+    test_gamma_agent.cpp
 )
 
 # Link library to test and GTest

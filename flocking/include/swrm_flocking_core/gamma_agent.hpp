@@ -8,9 +8,9 @@ namespace swrm::flocking {
 
     class gamma_agent {
     private:
-        vector2d position;
-        vector2d velocity;
-        hpscalar time;
+        vector2d p;
+        vector2d v;
+        hpscalar t;
         const hpscalar time_step;
         const vector_function velocity_parameterization;
 
@@ -21,11 +21,11 @@ namespace swrm::flocking {
                 const vector_function& velocity_parameterization,
                 hpscalar time_step
             );
-        const vector2d& get_position() const noexcept;
+        const vector2d& position() const noexcept;
 
-        const vector2d& get_velocity() const noexcept;
+        const vector2d& velocity() const noexcept;
 
-        const hpscalar& get_time() const noexcept;
+        const hpscalar& time() const noexcept;
 
         const hpscalar& x() const noexcept;
 
