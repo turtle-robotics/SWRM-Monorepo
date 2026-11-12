@@ -1,0 +1,12 @@
+# VSCode files
+.vscode
+
+# Build artifacts
+build
+
+**/*.exe
+**/*.ilk
+**/*.obj
+**/*.pdb
+**/*.lib
+**/*.svg
