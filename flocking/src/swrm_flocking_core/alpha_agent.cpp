@@ -18,7 +18,6 @@ namespace swrm::flocking {
             if (agent.ID() == this->id) continue;
             if ((this->p - agent.position()).norm() > INTERACTION_RANGE) continue;
 
-            // TODO: Actually write lmfao
             hpscalar sigma_distance = sigma_norm(this->p - agent.position());
             vector2d sigma_gradient = sigma_norm_gradient(this->p - agent.position());
             position_control += inter_agent_action_function(sigma_distance) * sigma_gradient;
