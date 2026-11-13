@@ -7,8 +7,6 @@
 #include <list>
 
 namespace swrm::flocking {
-    using acceleration_update_t = int;
-
     class alpha_agent {
     private:
         inline static size_t next_id = 0;
@@ -17,16 +15,8 @@ namespace swrm::flocking {
         vector2d p;
         vector2d v;
         vector2d a;
-        acceleration_update_t safe_update;
-
-        void update_safety(const acceleration_update_t check);
 
     public:
-        constexpr static acceleration_update_t UPDATE_NONE = 0;
-        constexpr static acceleration_update_t UPDATE_ALPHA = 1;
-        constexpr static acceleration_update_t UPDATE_GAMMA = 2;
-        constexpr static acceleration_update_t UPDATE_BOTH = 3;
-
         alpha_agent(const vector2d& p, const vector2d& v) noexcept;
 
         size_t ID() const noexcept;
@@ -37,8 +27,10 @@ namespace swrm::flocking {
 
         const vector2d& acceleration() const noexcept;
 
-        void inter_agent_control(const std::list<alpha_agent>& agents);
-        void gamma_agent_control(const gamma_agent& agent);
+        void update(const vector2d& acceleration);
+
+        vector2d inter_agent_control(const std::list<alpha_agent>& agents) const;
+        vector2d gamma_agent_control(const gamma_agent& agent) const;
     };
 }
 
