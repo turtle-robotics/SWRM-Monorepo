@@ -21,7 +21,7 @@ Before you run any of the scripts, you must first output your encoder data in a 
 
 1. Before you output your encoder data, add a header for the CSV at the end of your setup function:
 ```c++
-serial.println("Loop Iteration, Motor 1, Motor 2, Motor 3")
+Serial.println("Loop Iteration, Motor 1, Motor 2, Motor 3")
 ```
 
 2. Set up your loop function in a similar fashion to the example below. From what I gather, motor speed and delay don't matter, but the encoder values must be read at the very beginning of each loop iteration and your printf function should be identical to the one below for best results.
