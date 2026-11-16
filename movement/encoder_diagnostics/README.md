@@ -8,7 +8,7 @@ This guide details how to properly format encoder data, export it as a CSV file,
 Before you run any of the scripts, you must first output your encoder data in a CSV format that is readable to the Python code. Currently, this is the **only convention** that ```process_csv.py``` will support:
 
 |Loop Iteration | Motor 1 | Motor 2 | Motor3 |
-----------------------------------------------
+|---------------|---------|---------|--------|
 | 0 | e1 | e2 | e3 |
 | 1 | e1 | e2 | e3 |
 | 2 | e1 | e2 | e3 |
