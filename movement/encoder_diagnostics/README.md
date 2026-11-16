@@ -60,7 +60,7 @@ void loop() {
 
 It is here where this guide recommends using the command line to upload your code instead of directly through VS Code or some other IDE. Begin by going about the typical PlatformIO workflow:
 
-**(For Windows Users, replace '/' with '\')**
+**(For Windows Users, replace '/' with '\\')**
 1. Change into the directory containing the code
 ```bash
 cd /path/to/codebase
