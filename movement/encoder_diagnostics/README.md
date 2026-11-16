@@ -92,7 +92,7 @@ pio run --target upload && python3 encoder_diagnostics/read_serial.py /dev/YOUR_
     tty.usbmodemxxxxxx (could be any string of numbers)
     ```
 
-4. The Python script should now be outputting the print statements that you specified in the last step and writing them to a file named ```encoder_data.csv```. For best practice, you should rename this file to something descriptive like ```encoder_data_black_bot_11-16-2026.csv``` to eliminate ambiguity and avoid overwriting data whenever you run the script again.
+4. The Python script should now be outputting the print statements that you specified in the last step and writing them to a file named ```encoder_data.csv```. To stop collecting data, press ```ctrl+c``` on Windows/Linux or ```cmd+c``` on Mac. For best practice, you should rename this file to something descriptive like ```encoder_data_black_bot_11-16-2026.csv``` to eliminate ambiguity and avoid overwriting data whenever you run the script again.
 
 ## Processing data using ```process_csv.py```
 After encoder data has been written to a .csv, graphing raw and differential encoder data is relatively straightforward. Simply execute:
