@@ -1,27 +1,26 @@
 # How to test motor encoder data
 This guide details how to properly format encoder data, export it as a CSV file, and plot both raw and differential encoder data for all three motors on the SWRM bots. For the best results, make sure to do everything as specified in the instructions
 
->[! NOTE]
+>[!NOTE]
 >Since ```read_serial.py``` uses serial to read output from the encoders and there can only be one serial connection per port, the script will **not** work if the serial monitor is open in your IDE. Likewise, it is recommended that you use commands like ```pio --target upload``` when uploading your code.
 
 ## Ensuring proper formatting in the main code
 Before you run any of the scripts, you must first output your encoder data in a CSV format that is readable to the Python code. Currently, this is the **only convention** that ```process_csv.py``` will support:
 
-_______________________________________
 |Loop Iteration|Motor 1|Motor 2|Motor3|
-_______________________________________
+----------------------------------------
 | 0 | e1| e2| e3|
-_______________________________________
-| 1 | e1 | e2 | e3|
-_______________________________________
-| 2 | e1| e2| e3|
-_______________________________________
-|...|...|...|...|
-_______________________________________
-| n | e1| e2| e3|
-_______________________________________
 
->[! NOTE]
+| 1 | e1 | e2 | e3|
+
+| 2 | e1| e2| e3|
+
+|...|...|...|...|
+
+| n | e1| e2| e3|
+
+
+>[!NOTE]
 >Please ensure that your variables used to read encoder data are of ```uint32_t``` type because raw encoder values are highly precise and will cause any smaller type to quickly overflow.
 
 1. Before you output your encoder data, add a header for the CSV at the end of your setup function:
@@ -56,10 +55,10 @@ void loop() {
 }
 ```
 
->[! CAUTION] This example uses code from the old SWRM_Leds repo and not the monorepo that you are reading this guide in because the monorepo's movement codebase has not yet been updated to output encoder data in a .csv format.
+>[!CAUTION] This example uses code from the old SWRM_Leds repo and not the monorepo that you are reading this guide in because the monorepo's movement codebase has not yet been updated to output encoder data in a .csv format.
 
 ## Pulling encoder data using ```read_serial.py```
->[! NOTE] 
+>[!NOTE] 
 >```read_serial.py``` uses the pyserial library in order to make a serial connection. Run ```pip install pyserial``` if not already installed.
 
 It is here where this guide recommends using the command line to upload your code instead of directly through VS Code or some other IDE. Begin by going about the typical PlatformIO workflow:
