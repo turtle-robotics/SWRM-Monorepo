@@ -1,5 +1,5 @@
 # How to test motor encoder data
-This guide details how to properly format encoder data, export it as a CSV file, and plot both raw and differential encoder data for all three motors on the SWRM bots. For the best results, make sure to do everything as specified in the instructions
+This guide details how to properly format encoder data, export it as a CSV file, and plot both raw and differential encoder data for all three motors on the SWRM bots. For the best results, make sure to do everything as specified in the instructions.
 
 >[!NOTE]
 >Since ```read_serial.py``` uses serial to read output from the encoders and there can only be one serial connection per port, the script will **not** work if the serial monitor is open in your IDE. Likewise, it is recommended that you use commands like ```pio --target upload``` when uploading your code.
@@ -92,6 +92,14 @@ pio run --target upload && python3 encoder_diagnostics/read_serial.py /dev/YOUR_
     tty.usbmodemxxxxxx (could be any string of numbers)
     ```
 
-4. The Python script should now be outputting the print statements that you specified in the last step and writing them to a file named ```encoder_data.csv```. For best practice, you should rename this file to something descriptive like ```encoder_data_black_bot_11-16-2026``` to eliminate ambiguity and avoid overwriting data whenever you run the script again.
+4. The Python script should now be outputting the print statements that you specified in the last step and writing them to a file named ```encoder_data.csv```. For best practice, you should rename this file to something descriptive like ```encoder_data_black_bot_11-16-2026.csv``` to eliminate ambiguity and avoid overwriting data whenever you run the script again.
 
 ## Processing data using ```process_csv.py```
+After encoder data has been written to a .csv, graphing raw and differential encoder data is relatively straightforward. Simply execute:
+```bash
+cd /path/to/encoder_diagnostics
+python3 process_csv.py data_1.csv data_2.csv ... data_n.csv
+```
+Where ```data_1.csv data2.csv ... data_n.csv``` is your encoder data collected by ```read_serial.py```. ```process_csv.py``` takes in unlimited arguments so you may process as many files containing encoder data as you would like. Once the script has finished, the output should look similar to this:
+<img width="1322" height="650" alt="encoder_data_black_bot" src="https://github.com/user-attachments/assets/1705cb1a-4a27-4c2e-b20d-099c20b802ea" />
+Ideally, all three lines should have the same slope in the raw encoder data and the same minimum and maximum values in the differential encoder data. Some factors such as the robot not being on a perfectly flat surface may cause some discrepancies between some of the encoders as might be the case with this one, so make sure to pull your data in as controlled of an environment as possible. Happy testing :)
