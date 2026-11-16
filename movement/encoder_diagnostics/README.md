@@ -51,7 +51,7 @@ void loop() {
 }
 ```
 
->[!CAUTION] This example uses code from the old SWRM_Leds repo and not the monorepo that you are reading this guide in because the monorepo's movement codebase has not yet been updated to output encoder data in a .csv format.
+>[!WARNING] This example uses code from the old SWRM_Leds repo and not the monorepo that you are reading this guide in because the monorepo's movement codebase has not yet been updated to output encoder data in a .csv format.
 
 ## Pulling encoder data using ```read_serial.py```
 >[!NOTE] 
