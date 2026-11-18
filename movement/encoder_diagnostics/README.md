@@ -68,7 +68,7 @@ cd /path/to/codebase
 
 2. Compile the platform and dependencies specified in the ```platformio.ini``` (if necessary)
 ```bash
-pio run --target=compiledb
+pio run -s --target=compiledb
 ```
 
 3. Upload the code to the ESP32 and run the python script to start pulling serial data
