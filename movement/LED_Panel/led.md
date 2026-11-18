@@ -1,9 +1,10 @@
 # LED Panel Info
-## General information
+## General Information
   - Model name: Xicoolee RGB Matrix LED Display Panel
   - Resolution: 64x64
   - Interface Type HUB75
 
+## Pin Configuration
 | Name |LED Matrix Pin | GPIO Pin  | Physical Pin |
 |------|---------------|-----------|--------------|
 |  R1  |       1       |    25     |       9      |
