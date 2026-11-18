@@ -13,8 +13,12 @@ namespace swrm::flocking {
         return position_gain + velocity_gain;
     }
 
+    alpha_agent::alpha_agent() noexcept : 
+        id(alpha_agent::next_id++), p(0.0, 0.0), v(0.0, 0.0), a(0.0, 0.0) {}
+
     alpha_agent::alpha_agent(const vector2d& p, const vector2d& v) noexcept : 
         id(alpha_agent::next_id++), p(p), v(v), a(0.0, 0.0) {}
+    
 
     size_t alpha_agent::ID() const noexcept {
         return this->id;

@@ -20,6 +20,14 @@ TEST(TestAlphaAgent, TestConstructorAndGetters) {
     EXPECT_EQ(agent.acceleration(), swrm::flocking::vector2d(0.0, 0.0));
 }
 
+TEST(TestAlphaAgent, TestDefaultConstructor) {
+    swrm::flocking::alpha_agent agent;
+
+    EXPECT_EQ(agent.position(), swrm::flocking::vector2d(0.0, 0.0));
+    EXPECT_EQ(agent.velocity(), swrm::flocking::vector2d(0.0, 0.0));
+    EXPECT_EQ(agent.acceleration(), swrm::flocking::vector2d(0.0, 0.0));
+}
+
 TEST(TestAlphaAgent, TestIDIncrementing) {
     swrm::flocking::vector2d position(0.0, 0.0);
     swrm::flocking::vector2d velocity(1.0, 1.0);

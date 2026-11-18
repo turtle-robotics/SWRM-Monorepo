@@ -20,6 +20,14 @@ namespace swrm::flocking {
 
     public:
         /**
+         * Creates an agent at the origin with zero velocity.
+         *
+         * The agent receives a process-wide unique identifier, and its
+         * acceleration command starts at zero.
+         */
+        alpha_agent() noexcept;
+
+        /**
          * Creates an agent at the given position and velocity.
          *
          * The agent receives a process-wide unique identifier, and its
