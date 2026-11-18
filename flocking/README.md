@@ -146,7 +146,8 @@ connected to WSL. For API documentation, install Doxygen as described in
 
 ## Building Documentation
 The API documentation is generated from the Doxygen comments in `include/` and
-`src/` using the `Doxyfile` in the `flocking` directory.
+`src/`, plus the main-page introduction in `mainpage.md`, using the `Doxyfile`
+in the `flocking` directory.
 
 Install Doxygen:
 - Debian, Ubuntu, or WSL: `sudo apt-get install doxygen`
