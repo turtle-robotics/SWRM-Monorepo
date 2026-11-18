@@ -17,6 +17,7 @@ add_executable(swrm_flocking_tests
     test_sigma_norm.cpp
     test_smooth_bump_function.cpp
     test_uneven_sigmoidal_function.cpp
+    test_inter_agent_action_function.cpp
     test_gamma_agent.cpp
     test_alpha_agent.cpp
 )
