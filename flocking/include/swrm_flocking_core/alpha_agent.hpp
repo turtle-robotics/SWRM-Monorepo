@@ -1,9 +1,6 @@
 #ifndef SWRM_FLOCKING_ALPHA_AGENT_HPP
 #define SWRM_FLOCKING_ALPHA_AGENT_HPP
 
-#include <ranges>
-#include <concepts>
-
 #include "swrm_flocking_core/types.hpp"
 #include "swrm_flocking_core/parameters.hpp"
 #include "swrm_flocking_core/inter_agent_action_function.hpp"
@@ -83,8 +80,7 @@ namespace swrm::flocking {
          * @return Acceleration command from the neighboring agents.
          */
         template <typename Container> 
-            requires std::ranges::range<Container> 
-            && std::same_as<std::ranges::range_value_t<Container>, alpha_agent>
+        requires collection_of<alpha_agent, Container>
         vector2d inter_agent_control(const Container& agents) const {
             vector2d position_control(0.0, 0.0);
             vector2d velocity_control(0.0, 0.0);
