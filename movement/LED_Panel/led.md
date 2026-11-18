@@ -22,5 +22,5 @@
 |  LAT |       14      |  4        |  26          |
 |  OE  |       15      |  15       |  23          |
 |  GND |       16      |           |  32          |
->[ !NOTE]
+>[!NOTE]
 >If CLK doesn't work, try pin 20 GPIO 6 or pin 36 GPIO 22
