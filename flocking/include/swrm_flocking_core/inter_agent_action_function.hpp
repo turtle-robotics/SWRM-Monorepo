@@ -6,7 +6,13 @@
 #include "swrm_flocking_core/sigma_norm.hpp"
 
 namespace swrm::flocking {
+    /**
+     * Sigma-norm value of INTERACTION_RANGE.
+     */
     const hpscalar SIGMA_INTERACTION_RANGE = sigma_norm(INTERACTION_RANGE);
+    /**
+     * Sigma-norm value of LATTICE_SCALE.
+     */
     const hpscalar SIGMA_LATTICE_SCALE = sigma_norm(LATTICE_SCALE);
     /**
      * Computes the action between two agents at a given sigma-norm distance.

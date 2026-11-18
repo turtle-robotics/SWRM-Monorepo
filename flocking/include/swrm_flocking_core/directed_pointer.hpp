@@ -16,6 +16,15 @@ namespace swrm::flocking {
     template <typename T, typename Lock>
     class directed_guard;
 
+    /**
+     * Owns an object and the shared mutex that guards it.
+     *
+     * The pointer owns the object, while readers share access and keep it
+     * alive. Create instances with make_directed(), and use lock() when
+     * exclusive access is required.
+     *
+     * @tparam T Type of the managed object.
+     */
     template <typename T>
     class directed_pointer {
     private:
@@ -115,6 +124,15 @@ namespace swrm::flocking {
         friend class directed_reader<T>;
     };
     
+    /**
+     * Read-only handle to an object managed by a directed_pointer.
+     *
+     * Readers are copyable and movable, keep the object alive, and can acquire
+     * shared locks through lock(). Obtain one with
+     * directed_pointer::make_reader().
+     *
+     * @tparam T Type of the referenced object.
+     */
     template <typename T>
     class directed_reader {
     private:
@@ -202,6 +220,16 @@ namespace swrm::flocking {
         friend class directed_pointer<T>;
     };
 
+    /**
+     * RAII guard that holds a shared or exclusive lock on a directed object.
+     *
+     * A guard is created by the appropriate lock() overload, and its lock is
+     * released when the guard is destroyed. Guards are move-constructible but
+     * cannot be copied or assigned.
+     *
+     * @tparam T Type of the guarded object.
+     * @tparam Lock Lock implementation used by the guard.
+     */
     template <typename T, typename Lock>
     class directed_guard {
     private:

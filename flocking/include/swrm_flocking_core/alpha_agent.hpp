@@ -9,6 +9,13 @@
 
 
 namespace swrm::flocking {
+    /**
+     * Flocking agent that reacts to nearby alpha agents and a gamma leader.
+     *
+     * The agent stores its position, velocity, and latest acceleration command.
+     * It does not integrate its own motion; update(position, velocity) supplies
+     * its state and update(acceleration) records a control command.
+     */
     class alpha_agent {
     private:
         inline static size_t next_id = 0;

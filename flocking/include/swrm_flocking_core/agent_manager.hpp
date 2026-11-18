@@ -21,6 +21,20 @@
 #include "swrm_flocking_core/directed_pointer.hpp"
 
 namespace swrm::flocking {
+    /**
+     * Coordinates a fixed set of alpha agents and one gamma agent.
+     *
+     * The manager owns the alpha agents and starts a background thread that
+     * advances the gamma agent. Call read_data() to ingest agent states and run
+     * the control loop. The gamma thread stops when the manager is destroyed.
+     *
+     * `AgentContainer` must be constructible from a size and provide a
+     * random-access range of alpha_agent values. Access to the alpha agents is
+     * not synchronized with read_data(), so do not iterate the manager while
+     * that method is running.
+     *
+     * @tparam AgentContainer Container template used to store alpha agents.
+     */
     template <template <typename, typename...> class AgentContainer>
     requires std::ranges::random_access_range<AgentContainer<alpha_agent>>
     && requires(size_t n) {
@@ -29,7 +43,13 @@ namespace swrm::flocking {
     // TODO: Refactor to be multithreaded using directed_pointer and a thread pool
     class agent_manager {
     public:
+        /**
+         * Container type that stores the alpha agents.
+         */
         using agent_container = AgentContainer<alpha_agent>;
+        /**
+         * Const iterator type over the managed alpha agents.
+         */
         using agent_iterator = decltype(std::ranges::cbegin(std::declval<agent_container&>()));
 
     private:
@@ -90,6 +110,19 @@ namespace swrm::flocking {
         }
 
     public:
+        /**
+         * Creates the alpha agents and starts the gamma agent worker.
+         *
+         * The alpha agents begin at the origin with zero velocity. The
+         * constructor starts the gamma thread but does not read from `in`.
+         *
+         * @tparam GammaArgs Constructor argument types for gamma_agent.
+         * @param in Stream intended for subsequent read_data() calls.
+         * @param alpha_count Number of alpha agents to create.
+         * @param time_step Control period used by read_data(), in simulation
+         * time.
+         * @param gamma_args Arguments forwarded to the gamma_agent constructor.
+         */
         template <typename... GammaArgs>
         agent_manager(
                 std::istream& in, 
@@ -103,6 +136,28 @@ namespace swrm::flocking {
             this->initialize_gamma(std::forward<GammaArgs>(gamma_args)...);
         }
 
+        /**
+         * Reads agent states and runs the flocking control loop until STOP.
+         *
+         * During initialization, each state line has the form `id x y vx vy`
+         * and must contain all five fields. Reading continues until every alpha
+         * agent has reported or `STOP` is read. Invalid IDs are ignored. If
+         * `STOP` or the end of the stream is reached before initialization
+         * finishes, the method returns without entering the control loop.
+         *
+         * Once initialized, the method spends each control period ingesting
+         * state updates, then computes gamma and inter-agent controls and
+         * stores them as alpha-agent acceleration commands. In the control
+         * loop, it returns after reading `STOP` and clears those commands
+         * before returning.
+         *
+         * The stream must remain readable while the control loop runs. If it
+         * reaches a non-good state, the method waits for more input rather than
+         * terminating. It must be allowed to return normally before the manager
+         * is destroyed.
+         *
+         * @param in Stream containing `id x y vx vy` lines or `STOP`.
+         */
         void read_data(std::istream& in) {
             // Read initial robot states from the input stream
             std::vector<bool> initialized(this->alphas.size(), false);
@@ -151,14 +206,35 @@ namespace swrm::flocking {
             }
         }
 
+        /**
+         * Returns a const iterator to the first alpha agent.
+         *
+         * The range is valid while the manager exists. Do not iterate the
+         * agents while read_data() is modifying their state.
+         *
+         * @return Const iterator to the first agent.
+         */
         agent_iterator begin() const {
             return std::ranges::cbegin(this->alphas);
         }
 
+        /**
+         * Returns a const iterator one past the last alpha agent.
+         *
+         * @return Const iterator one past the last agent.
+         */
         agent_iterator end() const {
             return std::ranges::cend(this->alphas);
         }
 
+        /**
+         * Stops the gamma worker and waits for it to finish.
+         *
+         * Alpha acceleration commands are cleared, while positions and
+         * velocities are left unchanged. Destruction can wait until the gamma
+         * agent's current update interval elapses. It must not overlap with
+         * read_data().
+         */
         ~agent_manager() {
             this->halt();
             this->gamma_thread.request_stop();

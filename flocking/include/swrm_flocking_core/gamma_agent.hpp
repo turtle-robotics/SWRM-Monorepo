@@ -5,6 +5,12 @@
 
 namespace swrm::flocking {
 
+    /**
+     * Virtual leader whose velocity follows a time-parameterized profile.
+     *
+     * Each update() advances simulated time, samples the profile, and moves
+     * the position with one explicit Euler step.
+     */
     class gamma_agent {
     private:
         vector2d p;
