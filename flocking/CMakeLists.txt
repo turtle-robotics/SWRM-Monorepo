@@ -43,17 +43,36 @@ set(CMAKE_REQUIRED_LINK_OPTIONS ${ASAN_FLAG})
 check_cxx_compiler_flag(${ASAN_FLAG} ASAN_SUPPORTED)
 unset(CMAKE_REQUIRED_LINK_OPTIONS)
 
+# -- THREAD SANIFIER CONFIGURATION --------------------------------------------
+if (MSVC)
+    set(TSAN_FLAG "/fsanitize=thread")
+else()
+    set(TSAN_FLAG "-fsanitize=thread")
+endif()
+
+# Check if thread sanitizer is supported by the compiler
+set(CMAKE_REQUIRED_LINK_OPTIONS ${TSAN_FLAG})
+check_cxx_compiler_flag(${TSAN_FLAG} TSAN_SUPPORTED)
+unset(CMAKE_REQUIRED_LINK_OPTIONS)
+
+# -- BUILD ARGUMENT HANDLING --------------------------------------------------
+option(USE_ASAN "Enable Address Sanitizer" FALSE)
+option(USE_TSAN "Enable Thread Sanitizer" FALSE)
+
 # -- PROJECT DEPENDENCIES -----------------------------------------------------
 # TODO: Link to ROS2 libraries as needed
 find_package(Boost REQUIRED)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(GMP REQUIRED IMPORTED_TARGET gmp)
-pkg_check_modules(MPFR REQUIRED IMPORTED_TARGET mpfr)
+find_package(Eigen3 REQUIRED NO_MODULE)
 
 # -- LINK PROJECT DEPENDENCIES ------------------------------------------------
 # All non-main files should be linked as an object library for tests
 add_library(swrm_flocking_core OBJECT
-    src/swrm_flocking_core/utilities.cpp
+    src/swrm_flocking_core/sigma_norm.cpp
+    src/swrm_flocking_core/smooth_bump_function.cpp
+    src/swrm_flocking_core/uneven_sigmoidal_function.cpp
+    src/swrm_flocking_core/inter_agent_action_function.cpp
+    src/swrm_flocking_core/gamma_agent.cpp
+    src/swrm_flocking_core/alpha_agent.cpp
 )
 
 # Main executable 
@@ -65,8 +84,7 @@ target_include_directories(swrm_flocking_core PUBLIC
 )
 target_link_libraries(swrm_flocking_core PUBLIC
     Boost::boost
-    PkgConfig::MPFR
-    PkgConfig::GMP
+    Eigen3::Eigen
 )
 
 # Link to main executable
@@ -74,10 +92,19 @@ target_link_libraries(swrm_flocking PRIVATE
     swrm_flocking_core
 )
 
+# Validate TSAN and ASAN mutual exclusivity
+if (USE_ASAN AND USE_TSAN)
+    message(FATAL_ERROR "USE_ASAN and USE_TSAN cannot both be true.")
+endif()
+
 # Set ASAN for both the core library and the main executable
-if (ASAN_SUPPORTED)
+# Set TSAN for both if ASAN isn't used because they are mutually exclusive
+if (ASAN_SUPPORTED AND USE_ASAN)
     target_compile_options(swrm_flocking_core PUBLIC ${ASAN_FLAG})
     target_link_options(swrm_flocking_core PUBLIC ${ASAN_FLAG})
+elseif (TSAN_SUPPORTED AND USE_TSAN)
+    target_compile_options(swrm_flocking_core PUBLIC ${TSAN_FLAG})
+    target_link_options(swrm_flocking_core PUBLIC ${TSAN_FLAG})
 endif()
 
 # -- TESTING CONFIGURATION ----------------------------------------------------

@@ -4,3 +4,6 @@
 # CMake generated files
 .cache
 build
+
+# Doxygen artifacts
+docs

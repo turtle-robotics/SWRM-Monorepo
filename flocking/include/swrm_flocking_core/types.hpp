@@ -1,9 +1,40 @@
 #ifndef SWRM_FLOCKING_TYPES_HPP
 #define SWRM_FLOCKING_TYPES_HPP
 
-#include <boost/multiprecision/mpfr.hpp>
+#include <boost/multiprecision/cpp_bin_float.hpp>
+#include <Eigen/Core>
 
-constexpr unsigned int HP_PRECISION = 1000;
-using hpscalar = boost::multiprecision::number<boost::multiprecision::mpfr_float_backend<HP_PRECISION>>;
+#include <functional>
+#include <ranges>
+#include <type_traits>
+
+namespace swrm::flocking {
+    /**
+     * Number of binary digits used by hpscalar.
+     */
+    constexpr unsigned int HP_PRECISION = 100;
+    /**
+     * Arbitrary-precision scalar with HP_PRECISION binary digits.
+     */
+    using hpscalar = boost::multiprecision::number<boost::multiprecision::cpp_bin_float<HP_PRECISION>>;
+
+    /**
+     * Two-dimensional column vector of hpscalar values.
+     */
+    using vector2d = Eigen::Matrix<hpscalar, 2, 1>;
+    /**
+     * Callable that maps simulated time to a velocity vector.
+     */
+    using vector_function = std::function<vector2d(hpscalar)>;
+    
+    /**
+     * Satisfied when C is a range whose values have type T.
+     *
+     * @tparam T Required value type.
+     * @tparam C Range type to check.
+     */
+    template <typename T, typename C>
+    concept collection_of = std::ranges::range<C> && std::is_same_v<std::ranges::range_value_t<C>, T>;
+}
 
 #endif // SWRM_FLOCKING_TYPES_HPP
