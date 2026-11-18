@@ -18,8 +18,8 @@ namespace swrm::flocking {
             if (agent.ID() == this->id) continue;
             if ((this->p - agent.position()).norm() > INTERACTION_RANGE) continue;
 
-            hpscalar sigma_distance = sigma_norm(this->p - agent.position());
-            vector2d sigma_gradient = sigma_norm_gradient(this->p - agent.position());
+            hpscalar sigma_distance = sigma_norm(agent.position() - this->p);
+            vector2d sigma_gradient = sigma_norm_gradient(agent.position() - this->p);
             position_control += inter_agent_action_function(sigma_distance) * sigma_gradient;
 
             hpscalar spatial_adjacency = smooth_bump_function(sigma_distance / SIGMA_INTERACTION_RANGE);
