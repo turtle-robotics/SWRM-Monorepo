@@ -5,16 +5,15 @@
 
 namespace swrm::flocking {
     /**
-     * Evaluates the uneven sigmoidal function used by the action function.
+     * Returns the sigmoidal response used by the action function.
      *
-     * The response mixes the bounded sigmoid with the two action gains:
-     * `0.5 * (a + b) * sigma(z) + (a - b)`, where `a` is `ACTION_GAIN_A` and
-     * `b` is `ACTION_GAIN_B`. Equal gains reduce the function to
-     * `a * sigma(z)`.
+     * The response is smooth, approaches `ACTION_GAIN_A` for large positive
+     * inputs and `-ACTION_GAIN_B` for large negative inputs, and stays
+     * continuous when the two gains differ.
      *
-     * @param z Input value, typically a sigma-norm distance shifted by the
+     * @param z Input value, usually a sigma-norm distance shifted by the
      * lattice scale.
-     * @return Sigmoidal response scaled by the action gains.
+     * @return Scaled sigmoidal response.
      */
     hpscalar uneven_sigmoidal_function(const hpscalar& z);
 }

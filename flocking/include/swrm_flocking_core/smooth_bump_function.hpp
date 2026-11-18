@@ -5,15 +5,13 @@
 
 namespace swrm::flocking {
     /**
-     * Evaluates the smooth bump function at a normalized distance.
+     * Returns a smooth cutoff weight for a normalized distance.
      *
-     * The function equals one up to `BUMP_CUTOFF`, falls to zero over the rest
-     * of the unit interval with a raised cosine, and stays at zero past one. The
-     * falling section is `0.5 * (1 + cos(pi * (z - h) / (1 - h)))`, where `h`
-     * is `BUMP_CUTOFF`.
+     * The weight is 1 from 0 through `BUMP_CUTOFF`, falls smoothly to 0 between
+     * `BUMP_CUTOFF` and 1, and is 0 outside that span.
      *
-     * @param z Normalized distance, expected in `[0, 1]`.
-     * @return Weight between zero and one.
+     * @param z Normalized distance.
+     * @return Cutoff weight.
      */
     hpscalar smooth_bump_function(const hpscalar& z);
 }

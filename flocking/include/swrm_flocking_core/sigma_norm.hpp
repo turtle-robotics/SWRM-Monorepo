@@ -5,54 +5,53 @@
 
 namespace swrm::flocking {
     /**
-     * Computes the sigma-norm of a scalar.
+     * Returns a smoothed distance.
      *
-     * The result is `(sqrt(1 + eps * z * z) - 1) / eps`, with `eps` set by
-     * `SIGMA_NORM_SMOOTHNESS`. It is quadratic near zero and grows linearly
-     * with slope `1 / sqrt(eps)` for large inputs.
+     * The result is 0 at 0, depends only on the magnitude of `z`, and has a
+     * finite derivative at the origin. `SIGMA_NORM_SMOOTHNESS` controls the
+     * amount of smoothing.
      *
-     * @param z Scalar to map.
-     * @return Sigma-norm of `z`.
+     * @param z Distance to smooth.
+     * @return Smoothed distance.
      */
     hpscalar sigma_norm(const hpscalar& z);
     /**
-     * Computes the sigma-norm of a 2D vector.
+     * Returns the smoothed length of a vector.
      *
-     * Applies the same mapping to the Euclidean norm of `z`, so the result
-     * depends only on the length of the vector.
+     * The direction of `z` does not affect the result.
      *
-     * @param z Vector to map.
-     * @return Sigma-norm of the vector length.
+     * @param z Vector whose length is measured.
+     * @return Smoothed length.
      */
     hpscalar sigma_norm(const vector2d& z);
     /**
-     * Computes the gradient of the sigma-norm with respect to the vector.
+     * Returns the gradient of the sigma-norm of a vector.
      *
-     * The result is `z / sqrt(1 + eps * ||z||^2)`, which preserves the
-     * direction of `z`.
+     * The result points in the direction of `z`. Its length approaches
+     * `1 / sqrt(SIGMA_NORM_SMOOTHNESS)` as the length of `z` grows.
      *
-     * @param z Point at which to evaluate the gradient.
-     * @return Gradient vector.
+     * @param z Point at which the gradient is evaluated.
+     * @return Gradient at `z`.
      */
     vector2d sigma_norm_gradient(const vector2d& z);
     /**
-     * Applies the bounded sigmoid to a 2D vector.
+     * Maps a vector into the unit disc.
      *
-     * The result is `z / sqrt(1 + ||z||^2)`, which keeps the direction of `z`
-     * and has length below one.
+     * The direction of `z` is preserved, and the resulting length is always
+     * less than one.
      *
      * @param z Vector to map.
      * @return Vector inside the unit disc.
      */
     vector2d bounded_sigmoidal(const vector2d& z);
     /**
-     * Applies the bounded sigmoid to a scalar.
+     * Maps a scalar onto the interval (-1, 1).
      *
-     * The result is `z / sqrt(1 + z * z)`, which rises smoothly from -1 to 1
-     * and stays inside that range.
+     * The result is odd, remains strictly between -1 and 1, and approaches
+     * those bounds as the magnitude of `z` grows.
      *
-     * @param z Scalar to map.
-     * @return Value between -1 and 1.
+     * @param z Value to map.
+     * @return Value in (-1, 1).
      */
     hpscalar bounded_sigmoidal(const hpscalar& z);
 }

@@ -16,15 +16,16 @@ namespace swrm::flocking {
 
     public:
         /**
-         * Creates a gamma agent that follows a velocity profile.
+         * Creates a gamma agent that moves along a velocity profile.
          *
-         * Simulated time starts at zero.
+         * The simulated time starts at zero. The first call to update()
+         * replaces the given velocity with the value sampled from the profile.
          *
          * @param position Initial position.
          * @param velocity Initial velocity.
-         * @param velocity_parameterization Function that maps simulated time to
-         * a commanded velocity.
-         * @param time_step Step applied by each call to update().
+         * @param velocity_parameterization Maps simulated time to a velocity.
+         * @param time_step Time added by each update(). Use
+         * `DEFAULT_TIME_STEP` for the usual step.
          */
         gamma_agent(
                 const vector2d& position, 
@@ -35,44 +36,44 @@ namespace swrm::flocking {
         /**
          * Returns the current position.
          *
-         * @return Position of this agent.
+         * @return Position vector.
          */
         const vector2d& position() const noexcept;
 
         /**
          * Returns the current velocity.
          *
-         * @return Velocity of this agent.
+         * @return Velocity vector.
          */
         const vector2d& velocity() const noexcept;
 
         /**
-         * Returns the elapsed simulated time.
+         * Returns the elapsed simulated time, which starts at zero.
          *
-         * @return Elapsed time, starting at zero.
+         * @return Elapsed simulated time.
          */
         const hpscalar& time() const noexcept;
 
         /**
-         * Returns the first component of the position.
+         * Returns the x coordinate of the current position.
          *
-         * @return x coordinate.
+         * @return X coordinate.
          */
         const hpscalar& x() const noexcept;
 
         /**
-         * Returns the second component of the position.
+         * Returns the y coordinate of the current position.
          *
-         * @return y coordinate.
+         * @return Y coordinate.
          */
         const hpscalar& y() const noexcept;
 
         /**
          * Advances the agent by one time step.
          *
-         * Each call adds `time_step` to the simulated time, samples the
-         * velocity parameterization at the new time, and moves the position by
-         * one explicit Euler step.
+         * The function adds `time_step` to the simulated time, samples the
+         * velocity profile at the new time, and moves the position by one
+         * explicit Euler step using the sampled velocity.
          */
         void update();
     };

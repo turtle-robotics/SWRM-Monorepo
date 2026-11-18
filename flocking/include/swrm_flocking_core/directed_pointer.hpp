@@ -23,9 +23,7 @@ namespace swrm::flocking {
         mutable std::shared_ptr<std::shared_mutex> mutex;
         
         /**
-         * Allocates the managed object and the mutex that guards it.
-         *
-         * @param args Arguments forwarded to the constructor of `T`.
+         * Creates the managed object and the mutex that guards it.
          */
         template<typename... Args>
         directed_pointer(Args&&... args) : 
@@ -34,11 +32,14 @@ namespace swrm::flocking {
 
     public:
         /**
-         * Copy construction is disabled so the pointer has one owner.
+         * Copy construction is deleted because each directed pointer has a
+         * single owner.
          */
         directed_pointer(const directed_pointer&) = delete;
         /**
-         * Takes the object reference from another pointer and empties it.
+         * Moves the object reference out of another directed pointer.
+         *
+         * The other pointer no longer refers to the object after the move.
          *
          * @param other Pointer to move from.
          */
@@ -47,20 +48,18 @@ namespace swrm::flocking {
         }
         
         /**
-         * Copy assignment is disabled so the pointer has one owner.
+         * Copy assignment is deleted.
          */
         directed_pointer& operator=(const directed_pointer&) = delete;
         /**
-         * Takes over the object and mutex of another pointer.
+         * Takes over the object and the mutex of another directed pointer.
          *
-         * Assigning into a pointer that still has readers would leave those
-         * readers guarding the wrong object, so this throws and leaves both
-         * pointers unchanged. Readers of the source stay valid because this
-         * pointer adopts its object and mutex.
+         * The assignment throws while readers still hold references to the
+         * current object, leaving both pointers unchanged.
          *
          * @param other Pointer to move from.
          * @return Reference to this pointer.
-         * @throws std::runtime_error If this pointer still has readers.
+         * @throws std::runtime_error If this pointer has active readers.
          */
         directed_pointer& operator=(directed_pointer&& other) {
             if (this == &other) return *this;
@@ -73,36 +72,41 @@ namespace swrm::flocking {
         }
     
         /**
-         * Creates a reader that shares the object and its mutex.
+         * Creates a reader for the managed object.
          *
-         * @return Reader pointing at the same object.
+         * The reader holds its own reference, so it stays valid after this
+         * pointer is destroyed.
+         *
+         * @return Reader for the managed object.
          */
         directed_reader<T> make_reader() const {
             return directed_reader{ptr, mutex};
         }
 
         /**
-         * Locks the object for exclusive access.
+         * Locks the managed object for exclusive access.
          *
-         * Waits until every reader has released its shared lock.
+         * The call blocks while any reader holds a shared lock.
          *
-         * @return Guard holding the unique lock.
+         * @return Guard that holds the exclusive lock.
          */
         directed_guard<T, std::unique_lock<std::shared_mutex>> lock() {
             return directed_guard<T, std::unique_lock<std::shared_mutex>>(ptr, std::unique_lock<std::shared_mutex>(*mutex));
         }
 
         /**
-         * Counts the readers that currently share the object.
+         * Returns the number of references held elsewhere.
          *
-         * @return Number of live readers.
+         * The reference owned by this pointer is not included.
+         *
+         * @return Number of references held elsewhere.
          */
         unsigned int reader_count() const {
             return this->ptr.use_count() - 1;
         }
         
         /**
-         * Releases this pointer's reference to the object.
+         * Releases the reference held by this pointer.
          */
         ~directed_pointer() {}
         
@@ -118,22 +122,19 @@ namespace swrm::flocking {
         mutable std::shared_ptr<std::shared_mutex> mutex;
 
         /**
-         * Binds a reader to an existing object and its mutex.
-         *
-         * @param p Pointer to the shared object.
-         * @param m Mutex guarding the object.
+         * Binds the reader to an existing object and its mutex.
          */
         directed_reader(const std::shared_ptr<T>& p, std::shared_ptr<std::shared_mutex> m) : ptr(p), mutex(m) {}
 
     public:
         /**
-         * Copies another reader's reference to the object.
+         * Copies another reader's reference to the object and its mutex.
          *
          * @param other Reader to copy.
          */
         directed_reader(const directed_reader& other) : ptr(other.ptr), mutex(other.mutex) {}
         /**
-         * Moves the references out of another reader.
+         * Moves another reader's reference and mutex into this reader.
          *
          * @param other Reader to move from.
          */
@@ -142,7 +143,7 @@ namespace swrm::flocking {
                 mutex(std::move(other.mutex)) {}
 
         /**
-         * Rebinds this reader to the object of another reader.
+         * Rebinds this reader to another reader's object and mutex.
          *
          * @param other Reader to copy.
          * @return Reference to this reader.
@@ -156,7 +157,7 @@ namespace swrm::flocking {
         }
 
         /**
-         * Moves the references out of another reader into this one.
+         * Moves another reader's object reference and mutex into this reader.
          *
          * @param other Reader to move from.
          * @return Reference to this reader.
@@ -172,29 +173,29 @@ namespace swrm::flocking {
         /**
          * Locks the object for reading.
          *
-         * Several readers can hold this lock at once, and it waits while a
+         * Several readers can hold the lock at once, and the call waits while a
          * writer holds the exclusive lock.
          *
-         * @return Guard holding the shared lock.
+         * @return Guard that holds the shared lock.
          */
         directed_guard<const T, std::shared_lock<std::shared_mutex>> lock() const {
             return directed_guard<const T, std::shared_lock<std::shared_mutex>>(ptr, std::shared_lock<std::shared_mutex>(*mutex));
         }
 
         /**
-         * Returns how many shared owners the object has.
+         * Returns the total reference count.
          *
-         * The count includes the directed pointer that created this reader and
-         * every live reader.
+         * The count includes the reference held by the directed pointer that
+         * created this reader.
          *
-         * @return Shared owner count.
+         * @return Reference count.
          */
         unsigned int use_count() const {
             return this->ptr.use_count();
         }
         
         /**
-         * Releases this reader's reference to the object.
+         * Releases the reference held by this reader.
          */
         ~directed_reader() {}
 
@@ -208,16 +209,15 @@ namespace swrm::flocking {
         Lock lock;
 
         /**
-         * Binds the guard to an object and an acquired lock.
+         * Binds the guard to an object and an already held lock.
          *
-         * @param p Pointer to the guarded object.
-         * @param l Lock held for the lifetime of the guard.
+         * The lock is released when the guard is destroyed.
          */
         directed_guard(std::shared_ptr<T> p, Lock&& l) : ptr(p), lock(std::move(l)) {}
 
     public:
         /**
-         * Copy construction is disabled so each guard owns its lock.
+         * Copy construction is deleted.
          */
         directed_guard(const directed_guard&) = delete;
         /**
@@ -230,25 +230,25 @@ namespace swrm::flocking {
                 lock(std::move(other.lock)) {}
 
         /**
-         * Copy assignment is disabled so each guard owns its lock.
+         * Copy assignment is deleted.
          */
         directed_guard& operator=(const directed_guard&) = delete;
         /**
-         * Move assignment is disabled so each guard keeps its lock.
+         * Move assignment is deleted.
          */
         directed_guard& operator=(directed_guard&& other) = delete;
 
         /**
-         * Returns a reference to the guarded object.
+         * Provides member access to the guarded object.
          *
-         * @return Reference to the object.
+         * @return Reference to the guarded object.
          */
         T& operator->() {
             return *ptr;
         }
 
         /**
-         * Dereferences the guard.
+         * Returns the guarded object.
          *
          * @return Reference to the guarded object.
          */
@@ -263,15 +263,12 @@ namespace swrm::flocking {
     };
     
     /**
-     * Creates a directed pointer that owns a new object.
-     *
-     * The arguments are forwarded to the constructor of `T`. The pointer
-     * allocates the object and the mutex that guards it.
+     * Creates a directed pointer that owns a newly constructed object.
      *
      * @tparam T Type of the object to create.
-     * @tparam Args Constructor argument types, deduced from the call.
+     * @tparam Args Constructor argument types.
      * @param args Arguments forwarded to the constructor of `T`.
-     * @return Directed pointer owning the new object.
+     * @return Pointer that owns the new object.
      */
     template <typename T, typename... Args>
     directed_pointer<T> make_directed(Args&&... args) {

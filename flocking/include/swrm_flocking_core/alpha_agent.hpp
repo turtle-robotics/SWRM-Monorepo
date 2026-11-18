@@ -25,8 +25,8 @@ namespace swrm::flocking {
         /**
          * Creates an agent at the given position and velocity.
          *
-         * The agent receives an identifier that is unique within the process,
-         * and its acceleration starts at zero.
+         * The agent receives a process-wide unique identifier, and its
+         * acceleration command starts at zero.
          *
          * @param p Initial position.
          * @param v Initial velocity.
@@ -43,44 +43,44 @@ namespace swrm::flocking {
         /**
          * Returns the current position.
          *
-         * @return Position of this agent.
+         * @return Position vector.
          */
         const vector2d& position() const noexcept;
         
         /**
          * Returns the current velocity.
          *
-         * @return Velocity of this agent.
+         * @return Velocity vector.
          */
         const vector2d& velocity() const noexcept;
 
         /**
-         * Returns the acceleration command set by update().
+         * Returns the acceleration command set by the last call to update().
          *
-         * @return Acceleration of this agent.
+         * @return Acceleration vector.
          */
         const vector2d& acceleration() const noexcept;
 
         /**
-         * Sets the acceleration command.
-         *
-         * The command is stored only. Velocity and position change through the
-         * caller's integration step.
+         * Stores an acceleration command without changing the position or
+         * velocity.
          *
          * @param acceleration Acceleration to store.
          */
         void update(const vector2d& acceleration);
 
         /**
-         * Computes the control command from nearby agents.
+         * Computes the control command from neighboring agents.
          *
-         * Position and velocity terms are summed over the agents within
-         * `INTERACTION_RANGE`, then scaled by `AGENT_POSITION_GAIN` and
-         * `AGENT_VELOCITY_GAIN`. Entries whose identifier matches this agent
-         * are skipped, so this agent may appear anywhere in the list.
+         * Neighbors within `INTERACTION_RANGE` contribute a position term that
+         * holds the lattice spacing and a velocity term that matches their
+         * velocity. The terms are scaled by `AGENT_POSITION_GAIN` and
+         * `AGENT_VELOCITY_GAIN`. If this agent appears in `agents`, its own
+         * entry is skipped.
          *
-         * @param agents Agents to consider as neighbors.
-         * @return Acceleration command from the inter-agent terms.
+         * @tparam Container Range of alpha_agent values.
+         * @param agents Agents that may act as neighbors.
+         * @return Acceleration command from the neighboring agents.
          */
         template <typename Container> 
             requires std::ranges::range<Container> 
@@ -90,7 +90,6 @@ namespace swrm::flocking {
             vector2d velocity_control(0.0, 0.0);
 
             for (const alpha_agent& agent : agents) {
-                // Skip if same agent
                 if (agent.ID() == this->id) continue;
                 if ((this->p - agent.position()).norm() > INTERACTION_RANGE) continue;
 
@@ -106,13 +105,13 @@ namespace swrm::flocking {
 
         }
         /**
-         * Computes the control command that tracks a gamma agent.
+         * Computes the control command that follows a gamma agent.
          *
-         * The position term is bounded by the sigmoid, and the velocity term
-         * drives this agent's velocity toward the gamma agent's velocity. Both
-         * use the navigational gains.
+         * The position error passes through the bounded sigmoid, which limits
+         * the response to large separations, and the velocity error is used
+         * directly. The navigational gains scale both terms.
          *
-         * @param agent Gamma agent to track.
+         * @param agent Gamma agent to follow.
          * @return Acceleration command toward the gamma agent.
          */
         vector2d gamma_agent_control(const gamma_agent& agent) const;
