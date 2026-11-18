@@ -1,10 +1,15 @@
 #ifndef SWRM_FLOCKING_ALPHA_AGENT_HPP
 #define SWRM_FLOCKING_ALPHA_AGENT_HPP
 
+#include <ranges>
+#include <concepts>
+
 #include "swrm_flocking_core/types.hpp"
+#include "swrm_flocking_core/parameters.hpp"
+#include "swrm_flocking_core/inter_agent_action_function.hpp"
+#include "swrm_flocking_core/smooth_bump_function.hpp"
 #include "swrm_flocking_core/gamma_agent.hpp"
 
-#include <list>
 
 namespace swrm::flocking {
     class alpha_agent {
@@ -77,7 +82,29 @@ namespace swrm::flocking {
          * @param agents Agents to consider as neighbors.
          * @return Acceleration command from the inter-agent terms.
          */
-        vector2d inter_agent_control(const std::list<alpha_agent>& agents) const;
+        template <typename Container> 
+            requires std::ranges::range<Container> 
+            && std::same_as<std::ranges::range_value_t<Container>, alpha_agent>
+        vector2d inter_agent_control(const Container& agents) const {
+            vector2d position_control(0.0, 0.0);
+            vector2d velocity_control(0.0, 0.0);
+
+            for (const alpha_agent& agent : agents) {
+                // Skip if same agent
+                if (agent.ID() == this->id) continue;
+                if ((this->p - agent.position()).norm() > INTERACTION_RANGE) continue;
+
+                hpscalar sigma_distance = sigma_norm(agent.position() - this->p);
+                vector2d sigma_gradient = sigma_norm_gradient(agent.position() - this->p);
+                position_control += inter_agent_action_function(sigma_distance) * sigma_gradient;
+
+                hpscalar spatial_adjacency = smooth_bump_function(sigma_distance / SIGMA_INTERACTION_RANGE);
+                velocity_control += spatial_adjacency * (agent.velocity() - this->v);
+            }
+
+            return AGENT_POSITION_GAIN * position_control + AGENT_VELOCITY_GAIN * velocity_control;
+
+        }
         /**
          * Computes the control command that tracks a gamma agent.
          *
