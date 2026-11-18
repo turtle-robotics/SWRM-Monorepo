@@ -20,6 +20,7 @@ add_executable(swrm_flocking_tests
     test_inter_agent_action_function.cpp
     test_gamma_agent.cpp
     test_alpha_agent.cpp
+    test_agent_manager.cpp
 )
 
 # Link library to test and GTest
@@ -33,7 +34,7 @@ target_link_libraries(swrm_flocking_tests PRIVATE
 if (ASAN_SUPPORTED AND USE_ASAN)
     target_compile_options(swrm_flocking_tests PRIVATE ${ASAN_FLAG})
     target_link_options(swrm_flocking_tests PRIVATE ${ASAN_FLAG})
-elseif (TSAN_SUPPORTED)
+elseif (TSAN_SUPPORTED AND USE_TSAN)
     target_compile_options(swrm_flocking_tests PRIVATE ${TSAN_FLAG})
     target_link_options(swrm_flocking_tests PRIVATE ${TSAN_FLAG})
 endif()
