@@ -1,4 +1,4 @@
-FROM ros:jazzy
+FROM ubuntu:24.04
 
 ARG BUILD_TESTING=false
 ARG IGNORE_MAIN=false
@@ -15,8 +15,11 @@ WORKDIR /app
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    libboost-all-dev libeigen3-dev \
-    ros-jazzy-turtlesim && \
+    build-essential \
+    ca-certificates \
+    cmake \
+    libboost-all-dev \
+    libeigen3-dev && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
