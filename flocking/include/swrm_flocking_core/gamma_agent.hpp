@@ -4,14 +4,13 @@
 #include "swrm_flocking_core/types.hpp"
 
 namespace swrm::flocking {
-    const hpscalar DEFAULT_TIME_STEP = 0.01;
 
     class gamma_agent {
     private:
         vector2d p;
         vector2d v;
-        hpscalar t;
-        const hpscalar time_step;
+        double t;
+        const double time_step;
         const vector_function velocity_parameterization;
 
     public:
@@ -31,7 +30,7 @@ namespace swrm::flocking {
                 const vector2d& position, 
                 const vector2d& velocity, 
                 const vector_function& velocity_parameterization,
-                hpscalar time_step
+                double time_step
             );
         /**
          * Returns the current position.
@@ -52,7 +51,14 @@ namespace swrm::flocking {
          *
          * @return Elapsed simulated time.
          */
-        const hpscalar& time() const noexcept;
+        double time() const noexcept;
+        
+        /**
+         * Returns the time step used to advance the simulation.
+         *
+         * @return Time step.
+         */
+        double time_delta() const noexcept;
 
         /**
          * Returns the x coordinate of the current position.

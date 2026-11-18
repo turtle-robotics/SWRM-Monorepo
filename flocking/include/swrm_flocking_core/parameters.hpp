@@ -18,6 +18,8 @@ namespace swrm::flocking {
     inline const hpscalar AGENT_VELOCITY_GAIN = 2 * boost::multiprecision::sqrt(AGENT_POSITION_GAIN);
     inline const hpscalar NAVIGATIONAL_POSITION_GAIN = 1.2;
     inline const hpscalar NAVIGATIONAL_VELOCITY_GAIN = 2 * boost::multiprecision::sqrt(NAVIGATIONAL_POSITION_GAIN);
+
+    static constexpr double DEFAULT_TIME_STEP = 0.01;
 }
 
 #endif // SWRM_FLOCKING_PARAMETERS_HPP

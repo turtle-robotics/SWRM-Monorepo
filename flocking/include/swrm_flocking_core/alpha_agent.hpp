@@ -73,6 +73,14 @@ namespace swrm::flocking {
          * @param acceleration Acceleration to store.
          */
         void update(const vector2d& acceleration);
+        
+        /**
+         * Stores a position and velocity without changing the acceleration command.
+         *
+         * @param position Position to store.
+         * @param velocity Velocity to store.
+         */
+        void update(const vector2d& position, const vector2d& velocity);
 
         /**
          * Computes the control command from neighboring agents.

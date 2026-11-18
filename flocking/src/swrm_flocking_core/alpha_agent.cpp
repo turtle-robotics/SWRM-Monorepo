@@ -39,4 +39,9 @@ namespace swrm::flocking {
     void alpha_agent::update(const vector2d& acceleration) {
         this->a = acceleration;
     }
+
+    void alpha_agent::update(const vector2d& position, const vector2d& velocity) {
+        this->p = position;
+        this->v = velocity;
+    }
 }

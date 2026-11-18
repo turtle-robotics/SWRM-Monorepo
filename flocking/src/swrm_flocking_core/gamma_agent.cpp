@@ -1,12 +1,13 @@
 #include "swrm_flocking_core/gamma_agent.hpp"
 #include "swrm_flocking_core/types.hpp"
+#include "swrm_flocking_core/parameters.hpp"
 
 namespace swrm::flocking {
     gamma_agent::gamma_agent(
         const swrm::flocking::vector2d& p, 
         const vector2d& v, 
         const vector_function& velocity_parameterization,
-        hpscalar time_step = DEFAULT_TIME_STEP
+        double time_step = DEFAULT_TIME_STEP
         ) : 
         p(p), 
         v(v), 
@@ -22,8 +23,12 @@ namespace swrm::flocking {
         return this->v;
     }
 
-    const hpscalar& gamma_agent::time() const noexcept {
+    double gamma_agent::time() const noexcept {
         return this->t;
+    }
+
+    double gamma_agent::time_delta() const noexcept {
+        return this->time_step;
     }
 
     const hpscalar& gamma_agent::x() const noexcept {

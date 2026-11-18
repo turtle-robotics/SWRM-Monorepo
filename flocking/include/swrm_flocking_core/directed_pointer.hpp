@@ -243,8 +243,8 @@ namespace swrm::flocking {
          *
          * @return Reference to the guarded object.
          */
-        T& operator->() {
-            return *ptr;
+        T* operator->() {
+            return ptr.get();
         }
 
         /**
