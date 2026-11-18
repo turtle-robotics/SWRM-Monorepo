@@ -7,7 +7,7 @@ class TestGammaAgent : public ::testing::Test {
 protected:
     swrm::flocking::vector2d initial_position;
     swrm::flocking::vector2d initial_velocity;
-    swrm::flocking::hpscalar time_step;
+    double time_step;
 
     TestGammaAgent() {
         initial_position = swrm::flocking::vector2d(0.0, 0.0);
