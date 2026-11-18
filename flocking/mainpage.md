@@ -1,4 +1,4 @@
-# SWRM Flocking Code {#mainpage}
+# SWRM Flocking Library {#mainpage}
 
 SWRM Flocking is a two-dimensional, local-interaction flocking library. It
 implements the three steering rules from Reynolds' boids model and adds a
@@ -6,6 +6,19 @@ virtual leader, called the gamma agent, that the flock follows. The
 \ref swrm::flocking::agent_manager "agent_manager" owns a fixed set of alpha
 agents, runs the gamma agent on a background thread, and turns incoming state
 reports into acceleration commands.
+
+## A library, not an application
+
+SWRM Flocking is a library that computes flocking controls. It is not a
+complete standalone application: it has no simulation loop, does not integrate
+agent motion, does not communicate with robot hardware, and does not write
+commands to an output stream. Your program supplies agent states to
+\ref swrm::flocking::agent_manager "agent_manager" and is responsible for
+using the acceleration commands it stores on the alpha agents.
+
+Integrate the library by linking the `swrm_flocking_core` target into your
+application. The sections below describe the control algorithm, the manager's
+interface, and the state-record format it expects.
 
 ## Reynolds' flocking principles
 

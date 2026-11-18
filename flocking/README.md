@@ -1,13 +1,22 @@
-# SWRM Flocking Code
-This is the code for the flocking algorithm used to coordinate the SWRM robots.
+# SWRM Flocking Library
+The flocking algorithm used to coordinate the SWRM robots, packaged as the
+`swrm_flocking_core` C++ library.
+
+This is a library, not a complete standalone application. It does not run a
+simulation, integrate agent motion, or communicate with robot hardware. A host
+application supplies agent states to `swrm::flocking::agent_manager` and is
+responsible for applying the acceleration commands the library computes. See
+[Using the Library](#using-the-library) for how to link it into your own
+program; the Doxygen main page (`mainpage.md`) describes the algorithm and the
+full integration contract.
 
 ## Dependencies
 ### Through Docker
 The only dependency is Docker. You can install Docker by following the
 instructions on the [Docker website](https://docs.docker.com/get-docker/).
 
-Prior to running the code, make sure you have Docker installed and running on 
-your machine.
+Prior to building the library, make sure you have Docker installed and running
+on your machine.
 
 ### Locally
 This project depends on two libraries: `Eigen` and `boost`. Building locally
@@ -30,41 +39,44 @@ inside the WSL environment.
 Doxygen is only needed for the optional API documentation; see
 [Building Documentation](#building-documentation).
 
-## Running the Code
+## Building the Library
 ### Through Docker
-To run the code through Docker, follow these steps:
+The Docker image builds the library; the project does not provide a standalone
+application to run.
 1. Clone the repository to your local machine.
 2. Open a terminal and navigate to the `flocking` directory.
 3. Build the Docker image by running the following command:
    ```
    docker build -t swrm-flocking .
    ```
-4. Run the Docker container by executing the following command:
+4. To compile the tests into the image as well, pass `BUILD_TESTING`:
    ```
-   docker run --rm swrm-flocking
+   docker build --build-arg BUILD_TESTING=true -t swrm-flocking .
+   ```
+   Run them with:
+   ```
+   docker run --rm --entrypoint /app/build/tests/swrm_flocking_tests swrm-flocking
    ```
 
 #### Build Arguments
-There are two build arguments that can be passed to the Docker build command:
+There are three build arguments that can be passed to the Docker build command:
 - `BUILD_TESTING`: `true` if the test code should be built, `false` otherwise. 
 Default is `false`.
-- `IGNORE_MAIN`: `true` if the main code shouldn't be executed, `false` 
-otherwise. Default is `false`.
-- `USE_ASAN`: `true` if the code should be built with AddressSanitizer, `false` 
-if it should be built with ThreadSanitizer (both of these are mutually 
-exclusive) Default is `false`.
+- `USE_ASAN`: `true` to build with AddressSanitizer. Default is `false`.
+- `USE_TSAN`: `true` to build with ThreadSanitizer. Default is `false`.
 
-> When testing the code, it's recommended to test with `USE_ASAN` as both 
-`true` and `false` in separate testing runs to ensure that the code is free of 
-both memory and thread errors.
+The sanitizer options are mutually exclusive.
+
+> When testing the code, run the suite once with `USE_ASAN` and once with
+> `USE_TSAN` to ensure that the code is free of both memory and thread errors.
 
 These can be passed to the Docker build command as follows:
 ```
-docker build --build-arg BUILD_TESTING=true --build-arg IGNORE_MAIN=false -t swrm-flocking .
+docker build --build-arg BUILD_TESTING=true --build-arg USE_ASAN=true -t swrm-flocking .
 ```
 
 ### Locally
-To run the code locally, follow these steps:
+To build the library locally, follow these steps:
 1. Install the dependencies as described in the [Dependencies](#dependencies) section.
 2. Clone the repository to your local machine.
 3. Open a terminal and navigate to the `flocking` directory.
@@ -76,10 +88,9 @@ To run the code locally, follow these steps:
    ```
    cmake --build build
    ```
-6. Run the executable by executing the following command:
-   ```
-   ./build/swrm_flocking
-   ```
+
+The build produces the `swrm_flocking_core` object library. No application
+executable is created.
 
 CMake writes everything into the `build` directory and uses the `Release`
 build type unless you pass `-DCMAKE_BUILD_TYPE`.
@@ -103,8 +114,23 @@ cmake --build build
 The two options are mutually exclusive; configuring with both set to `TRUE`
 stops with an error.
 
+## Using the Library
+Add the library to your application's build and link `swrm_flocking_core`. The
+target carries the public include directory and its Eigen and Boost
+dependencies:
+```cmake
+add_subdirectory(path/to/flocking)
+target_link_libraries(my_application PRIVATE swrm_flocking_core)
+```
+
+Your application owns the simulation or robot driver. It feeds agent states to
+`swrm::flocking::agent_manager`, and the library computes and stores each
+alpha agent's acceleration command. The library never applies those commands,
+integrates motion, or writes output itself. The Doxygen main page includes a
+complete usage example and the input stream format.
+
 ## Windows (WSL)
-Use WSL 2 to build and run the project in a Linux environment on Windows.
+Use WSL 2 to build the project in a Linux environment on Windows.
 
 1. Install WSL 2 and Ubuntu from an elevated PowerShell:
    ```powershell
@@ -127,11 +153,10 @@ Use WSL 2 to build and run the project in a Linux environment on Windows.
    ```
    Keeping the checkout under the Linux filesystem, such as `~/`, is much faster
    than building from `/mnt/c`.
-4. Configure, build, and run:
+4. Configure and build:
    ```bash
    cmake -S . -B build
    cmake --build build
-   ./build/swrm_flocking
    ```
 5. Run the tests:
    ```bash

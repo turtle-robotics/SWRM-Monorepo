@@ -75,9 +75,6 @@ add_library(swrm_flocking_core OBJECT
     src/swrm_flocking_core/alpha_agent.cpp
 )
 
-# Main executable 
-add_executable(swrm_flocking src/main.cpp)
-
 # Add headers and libraries to the object library
 target_include_directories(swrm_flocking_core PUBLIC 
     ${PROJECT_SOURCE_DIR}/include
@@ -85,11 +82,6 @@ target_include_directories(swrm_flocking_core PUBLIC
 target_link_libraries(swrm_flocking_core PUBLIC
     Boost::boost
     Eigen3::Eigen
-)
-
-# Link to main executable
-target_link_libraries(swrm_flocking PRIVATE
-    swrm_flocking_core
 )
 
 # Validate TSAN and ASAN mutual exclusivity
