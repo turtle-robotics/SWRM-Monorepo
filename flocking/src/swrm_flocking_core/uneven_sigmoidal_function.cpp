@@ -14,9 +14,10 @@ namespace swrm::flocking {
         hpscalar c_numerator = boost::multiprecision::abs(ACTION_GAIN_A - ACTION_GAIN_B);
         hpscalar c_denominator = boost::math::rsqrt(4 * ACTION_GAIN_A * ACTION_GAIN_B);
         hpscalar c = c_numerator * c_denominator;
-        return 0.5 
-            * (ACTION_GAIN_A + ACTION_GAIN_B)
-            * bounded_sigmoidal(z)
-            + (ACTION_GAIN_A - ACTION_GAIN_B);
+        return 0.5 * (
+            (ACTION_GAIN_A + ACTION_GAIN_B) 
+            * bounded_sigmoidal(z + c) 
+            + (ACTION_GAIN_A - ACTION_GAIN_B)
+            );
     }
 }

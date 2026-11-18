@@ -7,6 +7,7 @@
 #include <swrm_flocking_core/types.hpp>
 #include <swrm_flocking_core/parameters.hpp>
 #include <swrm_flocking_core/inter_agent_action_function.hpp>
+#include <swrm_flocking_core/smooth_bump_function.hpp>
 
 TEST(TestInterAgentActionFunction, InterAgentActionFunctionBelowBumpRange) {
     swrm::flocking::hpscalar z = -0.5;
@@ -35,14 +36,14 @@ TEST(TestInterAgentActionFunction, InterAgentActionFunctionAboveBumpRange) {
 }
 
 TEST(TestInterAgentActionFunction, InterAgentActionFunctionBelowBumpCutoff) {
-    swrm::flocking::hpscalar z = 0.1 / swrm::flocking::SIGMA_INTERACTION_RANGE;
+    swrm::flocking::hpscalar z = 0.03;
+    swrm::flocking::hpscalar dz = z - swrm::flocking::SIGMA_LATTICE_SCALE;
     swrm::flocking::hpscalar expected_value = swrm::flocking::ACTION_GAIN_A 
-        * z * boost::math::rsqrt((1.0 + z * z));
+        * dz * boost::math::rsqrt(1.0 + dz * dz);
     swrm::flocking::hpscalar computed_value = swrm::flocking::inter_agent_action_function(z);
 
     swrm::flocking::hpscalar epsilon = 1e-6;
     swrm::flocking::hpscalar margin = boost::multiprecision::abs(computed_value - expected_value);
-
     EXPECT_TRUE(margin < epsilon)
         << "Inter-agent action function value "
         << computed_value
@@ -51,14 +52,15 @@ TEST(TestInterAgentActionFunction, InterAgentActionFunctionBelowBumpCutoff) {
 }
 
 TEST(TestInterAgentActionFunction, InterAgentActionFunctionAboveBumpCutoff) {
-    swrm::flocking::hpscalar z = 0.8;
+    swrm::flocking::hpscalar z = 0.15;
     swrm::flocking::hpscalar pz = z / swrm::flocking::SIGMA_INTERACTION_RANGE;
     swrm::flocking::hpscalar dz = z - swrm::flocking::SIGMA_LATTICE_SCALE;
     
     swrm::flocking::hpscalar numerator = boost::math::constants::pi<swrm::flocking::hpscalar>() * (pz - swrm::flocking::BUMP_CUTOFF);
     swrm::flocking::hpscalar denominator = 1.0 - swrm::flocking::BUMP_CUTOFF;
+    swrm::flocking::hpscalar bump_value = 0.5 * (1.0 + boost::multiprecision::cos(numerator / denominator));
     swrm::flocking::hpscalar uneven_sigmoidal = swrm::flocking::ACTION_GAIN_A * dz * boost::math::rsqrt((1.0 + dz * dz));
-    swrm::flocking::hpscalar expected_value = uneven_sigmoidal * (numerator / denominator);
+    swrm::flocking::hpscalar expected_value = uneven_sigmoidal * bump_value;
     swrm::flocking::hpscalar computed_value = swrm::flocking::inter_agent_action_function(z);
 
     swrm::flocking::hpscalar epsilon = 1e-6;
