@@ -13,7 +13,7 @@ your machine.
 This project depends on two libraries: `Eigen` and `boost`. Building locally
 also needs CMake 3.22.1 or newer and a compiler that supports C++23.
 
-On Debian or Ubuntu, install both libraries with:
+On Debian, Ubuntu, or WSL, install both libraries with:
 ```
 sudo apt-get install libeigen3-dev libboost-all-dev
 ```
@@ -22,6 +22,13 @@ On macOS, install them with Homebrew:
 ```
 brew install eigen boost
 ```
+
+Windows is supported through WSL 2. Complete the setup in
+[Windows (WSL)](#windows-wsl), then follow the Debian/Ubuntu instructions above
+inside the WSL environment.
+
+Doxygen is only needed for the optional API documentation; see
+[Building Documentation](#building-documentation).
 
 ## Running the Code
 ### Through Docker
@@ -95,3 +102,67 @@ cmake --build build
 ```
 The two options are mutually exclusive; configuring with both set to `TRUE`
 stops with an error.
+
+## Windows (WSL)
+Use WSL 2 to build and run the project in a Linux environment on Windows.
+
+1. Install WSL 2 and Ubuntu from an elevated PowerShell:
+   ```powershell
+   wsl --install -d Ubuntu
+   ```
+   Restart Windows if prompted. If WSL is already installed, run `wsl --update`
+   and `wsl --set-default-version 2` before continuing. Then launch Ubuntu and
+   create a Linux username and password.
+2. Install the compiler, CMake, and libraries inside Ubuntu. Use Ubuntu 22.04
+   or newer with a compiler that supports C++23:
+   ```bash
+   sudo apt update
+   sudo apt install build-essential cmake libeigen3-dev libboost-all-dev
+   ```
+3. Clone the repository into the WSL home directory and enter the `flocking`
+   directory:
+   ```bash
+   git clone <repository-url> ~/SWRM-Monorepo
+   cd ~/SWRM-Monorepo/flocking
+   ```
+   Keeping the checkout under the Linux filesystem, such as `~/`, is much faster
+   than building from `/mnt/c`.
+4. Configure, build, and run:
+   ```bash
+   cmake -S . -B build
+   cmake --build build
+   ./build/swrm_flocking
+   ```
+5. Run the tests:
+   ```bash
+   ctest --test-dir build --output-on-failure
+   ```
+   The first configure downloads GoogleTest, so the WSL environment needs an
+   internet connection.
+
+These commands work in Windows Terminal's Ubuntu profile or in VS Code
+connected to WSL. For API documentation, install Doxygen as described in
+[Building Documentation](#building-documentation).
+
+## Building Documentation
+The API documentation is generated from the Doxygen comments in `include/` and
+`src/` using the `Doxyfile` in the `flocking` directory.
+
+Install Doxygen:
+- Debian, Ubuntu, or WSL: `sudo apt-get install doxygen`
+- macOS: `brew install doxygen`
+
+From the `flocking` directory, generate the HTML documentation:
+```
+doxygen Doxyfile
+```
+The entry point is `docs/html/index.html`. Open it with:
+- macOS: `open docs/html/index.html`
+- Linux: `xdg-open docs/html/index.html`
+- WSL: `explorer.exe docs/html/index.html`
+
+The `docs/` directory is generated output and is ignored by Git. Graph
+generation is disabled by default in `Doxyfile` (`HAVE_DOT = NO`), so Graphviz
+is not required. To enable class and include diagrams, install Graphviz
+(`sudo apt-get install graphviz` on Debian/Ubuntu/WSL or
+`brew install graphviz` on macOS) and set `HAVE_DOT = YES` in `Doxyfile`.
