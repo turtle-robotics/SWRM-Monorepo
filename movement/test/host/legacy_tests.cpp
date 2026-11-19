@@ -6,10 +6,13 @@
 void freshLegacy() {
     Wire = HostWire{}; Serial = HostSerial{}; hostTime = 0;
     configured = enabled = running = broken = false;
+    squarePattern = SquarePattern{}; selectedOrientation=DriveOrientation::v9;
     selectedType = 1; selectedPolarity = 1; singleWrites = true;
     selectedClock = legacy::busHz; writeGapMs = 0;
     pwmMode = false; for (int& value : activeOutputs) value = 0;
-    for (unsigned i=0;i<3;++i) { wheelAngle[i]=90+120*i; wheelSign[i]=1; }
+    selectedMixer = Mixer::original;
+    const float angles[3] = {150,30,270};
+    for (unsigned i=0;i<3;++i) { wheelAngle[i]=angles[i]; wheelSign[i]=1; motorTrim[i]=1; }
     stopRetries = used = 0; discard = false; lastError = lastReg = 0;
     setup();
     assert(!configured && !enabled && !running && !broken);
@@ -24,31 +27,89 @@ void stoppedLegacy() {
     assert(!enabled && !running);
     for (auto m : Wire.motor) assert(m == 0);
 }
+// Compare existing logical-command regressions after decoding the hardware adapter.
+int logicalMotor(unsigned i) { return Wire.motor[i]*(i==1 ? -1 : 1); }
+
 int main() {
     assert(selectedType==1 && selectedPolarity==0 && !singleWrites && !pwmMode);
+    assert(selectedMixer==Mixer::legacy);
+    // Preview/mixer edits work before init and cannot touch the bus. Outputs
+    // use +X right, +Y backward, +W clockwise in BOTH selectable models.
+    freshLegacy(); cmdLegacy("preview 0 -1 0 20");
+    assert(Serial.output.find("M1=-12 M2=12 M3=0")!=std::string::npos);
+    cmdLegacy("preview 1 0");
+    assert(Serial.output.find("M1=7 M2=7 M3=13")!=std::string::npos);
+    cmdLegacy("mixer geometry"); cmdLegacy("preview 0 -1");
+    assert(Serial.output.find("M1=-17 M2=17 M3=0")!=std::string::npos);
+    cmdLegacy("preview 1 0");
+    assert(Serial.output.find("M1=-10 M2=-10 M3=20")!=std::string::npos);
+    cmdLegacy("preview 0 0 1");
+    assert(Serial.output.find("M1=-20 M2=-20 M3=-20")!=std::string::npos);
+    assert(Wire.writes.empty() && Wire.readRequests==0 && !enabled && !running);
+    int candidate[3] = {};
+    assert(computeWheelCommands(0,1,0,20,candidate));
+    assert(candidate[0]==17 && candidate[1]==-17 && candidate[2]==0);
+    assert(computeWheelCommands(-1,0,0,20,candidate));
+    assert(candidate[0]==10 && candidate[1]==10 && candidate[2]==-20);
+    cmdLegacy("mixer original");
+    assert(computeWheelCommands(1,1,-1,30,candidate));
+    assert(candidate[0]==30 && candidate[1]==2 && candidate[2]==8); // Shared limiting.
+    assert(!driveRobot(0,-1)); // Pure computation never bypasses init/arm.
+    // A channel permutation/sign edit only changes geometry mode, not the
+    // preserved original coefficients or motor-driver feedback configuration.
+    cmdLegacy("wheel 1 30 -1");
+    assert(computeWheelCommands(0,-1,0,20,candidate) && candidate[0]==-12);
+    cmdLegacy("mixer geometry");
+    assert(computeWheelCommands(0,-1,0,20,candidate) && candidate[0]==-17);
+    assert(selectedPolarity==1 && Wire.writes.empty());
+    cmdLegacy("mixer invalid"); assert(selectedMixer==Mixer::geometry);
+    for (const char* bad : {"preview nan 0", "preview 0 inf", "preview 0 0 2",
+                            "preview 0 0 0 0", "preview 0 0 0 128"}) {
+        Serial.output.clear(); cmdLegacy(bad);
+        assert(Serial.output.find("PREVIEW mixer=")==std::string::npos && Wire.writes.empty());
+    }
     // Use the bench-confirmed driver profile and test real serial drive parsing,
     // multiwheel packet construction, reversals, clipping and timed zero stops.
     freshLegacy(); cmdLegacy("profile 1 0"); cmdLegacy("transport block"); cmdLegacy("init");
     cmdLegacy("drive 1 0"); assert(!running && !enabled);
-    cmdLegacy("arm"); cmdLegacy("drive 1 0 1000 20");
-    assert(running && Wire.motor[0]==0 && Wire.motor[1]==-17 && Wire.motor[2]==17);
-    assert((Wire.writes.back()==std::vector<uint8_t>{51,0,239,17,0}));
+    cmdLegacy("arm"); cmdLegacy("drive 0 -1 1000 20");
+    assert(running && logicalMotor(0)==-12 && logicalMotor(1)==12 && logicalMotor(2)==0);
+    assert((Wire.writes.back()==std::vector<uint8_t>{51,244,244,0,0}));
+    cmdLegacy("mixer geometry"); assert(selectedMixer==Mixer::original); // Busy edits rejected.
     hostTime=began+1000; updateTest(); stoppedLegacy();
-    cmdLegacy("arm"); cmdLegacy("drive -1 0");
-    assert(running && Wire.motor[1]==17 && Wire.motor[2]==-17); cmdLegacy("stop");
-    cmdLegacy("arm"); cmdLegacy("drive 0 1 1500 20");
-    assert(running && Wire.motor[0]==20 && Wire.motor[1]==-10 && Wire.motor[2]==-10);
-    cmdLegacy("wheel 1 90 -1"); assert(wheelSign[0]==1); cmdLegacy("stop");
-    cmdLegacy("wheel 1 90 -1"); assert(wheelSign[0]==-1);
-    cmdLegacy("arm"); cmdLegacy("drive 0 1"); assert(Wire.motor[0]==-20); cmdLegacy("stop");
+    cmdLegacy("arm"); cmdLegacy("drive 0 1");
+    assert(running && logicalMotor(0)==12 && logicalMotor(1)==-12); cmdLegacy("stop");
+    cmdLegacy("mixer geometry"); assert(configured && selectedMixer==Mixer::geometry);
+    cmdLegacy("arm"); cmdLegacy("drive 1 0 1500 20");
+    assert(running && logicalMotor(0)==-10 && logicalMotor(1)==-10 && logicalMotor(2)==20);
+    cmdLegacy("wheel 1 150 -1"); assert(wheelSign[0]==1); cmdLegacy("stop");
+    cmdLegacy("wheel 1 150 -1"); assert(wheelSign[0]==-1);
+    cmdLegacy("arm"); cmdLegacy("drive 1 0"); assert(logicalMotor(0)==10); cmdLegacy("stop");
+    cmdLegacy("wheel 1 150 1");
+    cmdLegacy("arm"); auto noWrites=Wire.writes.size();
+    cmdLegacy("mixer original"); cmdLegacy("preview 0 0");
+    assert(selectedMixer==Mixer::geometry && Wire.writes.size()==noWrites);
+    cmdLegacy("twist 0 0 1 500 10");
+    assert(running && logicalMotor(0)==-10 && logicalMotor(1)==-10 && logicalMotor(2)==-10);
+    hostTime=began+500; updateTest(); stoppedLegacy();
+    cmdLegacy("arm"); assert(driveRobot(0,-1,0,500,20));
+    assert(logicalMotor(0)==-17 && logicalMotor(1)==17 && logicalMotor(2)==0);
+    hostTime=began+500; updateTest(); stoppedLegacy();
     cmdLegacy("arm"); cmdLegacy("drive 1 1 1000 30");
     for (int value : Wire.motor) assert(value>=-30 && value<=30);
     inputLegacy("!\n"); stoppedLegacy(); cmdLegacy("arm");
-    for (const char* bad : {"drive nan 0","drive 2 0","drive 1 0 3001","drive 1 0 1000 31","drive 1 0 1000 0"}) {
+    for (const char* bad : {"drive nan 0","drive 2 0","drive 1 0 3001","drive 1 0 1000 128","drive 1 0 1000 0",
+                            "twist 0 0 nan","twist 0 0 2","twist 0 0 1 49","twist 0 0 1 500 128",
+                            "twist 0 0 1 500 20 extra"}) {
         const auto n=Wire.writes.size(); cmdLegacy(bad); assert(!running && Wire.writes.size()==n);
     }
+    const auto beforeInvalid=Wire.writes.size();
+    assert(!driveRobot(NAN,0) && !driveRobot(0,0,INFINITY) && !driveRobot(0,0,2));
+    assert(!driveRobot(0,-1,0,49) && !driveRobot(0,-1,0,3001) && !driveRobot(0,-1,0,500,128));
+    assert(Wire.writes.size()==beforeInvalid);
     cmdLegacy("stop"); cmdLegacy("mode pwm"); cmdLegacy("init"); cmdLegacy("arm");
-    cmdLegacy("drive 1 0"); assert(!running); cmdLegacy("stop");
+    cmdLegacy("drive 1 0"); cmdLegacy("twist 0 0 1"); assert(!running);
+    assert(!driveRobot(0,-1)); cmdLegacy("stop");
     // Diagnostics never configure/arm/write a motor payload, even on failure.
     freshLegacy(); cmdLegacy("voltage");
     assert(Serial.output.find("reported=5000 mV (5.000 V)") != std::string::npos);
@@ -80,15 +141,15 @@ int main() {
     auto writes = Wire.writes.size(); hostTime += 10000; loop();
     assert(Wire.writes.size() == writes); // No alternating or repeated idle-mode writes.
     cmdLegacy("arm"); cmdLegacy("motor 1 10 1000");
-    assert(running && Wire.motor[0] == 10 && Wire.motor[1] == 0 && Wire.motor[2] == 0 && Wire.motor[3] == 0);
+    assert(running && logicalMotor(0) == 10 && logicalMotor(1) == 0 && logicalMotor(2) == 0 && logicalMotor(3) == 0);
     const auto start = began; writes = Wire.writes.size();
     hostTime = start+999; updateTest(); assert(running && Wire.writes.size() == writes);
     hostTime = start+1000; updateTest(); stoppedLegacy(); assert(!broken);
     cmdLegacy("arm"); cmdLegacy("original"); assert(running);
-    assert(Wire.motor[0] == 58 && Wire.motor[1] == -58 && Wire.motor[2] == 0 && Wire.motor[3] == 0);
+    assert(logicalMotor(0) == 58 && logicalMotor(1) == -58 && logicalMotor(2) == 0 && logicalMotor(3) == 0);
     const auto originalStart = began; writes = Wire.writes.size();
     hostTime = originalStart+2000; updateTest(); assert(running && Wire.writes.size() == writes);
-    cmdLegacy("motor 3 5 1000"); assert(began == originalStart && Wire.motor[0] == 58);
+    cmdLegacy("motor 3 5 1000"); assert(began == originalStart && logicalMotor(0) == 58);
     hostTime = originalStart+3000; updateTest(); stoppedLegacy();
     writes = Wire.writes.size(); hostTime += 10000; updateTest(); assert(Wire.writes.size() == writes);
     for (const auto& w : Wire.writes) {
@@ -101,21 +162,21 @@ int main() {
     assert((Wire.writes[writes] == std::vector<uint8_t>{51,0}));
     assert((Wire.writes[writes+1] == std::vector<uint8_t>{53,0}));
     assert((Wire.writes[writes+2] == std::vector<uint8_t>{54,0}));
-    assert((Wire.writes[writes+3] == std::vector<uint8_t>{52,10}));
-    assert(Wire.motor[0] == 0 && Wire.motor[1] == 10 && Wire.motor[2] == 0);
+    assert((Wire.writes[writes+3] == std::vector<uint8_t>{52,246}));
+    assert(logicalMotor(0) == 0 && logicalMotor(1) == 10 && logicalMotor(2) == 0);
     cmdLegacy("stop"); cmdLegacy("arm"); cmdLegacy("motor 3 10 1000");
-    assert(Wire.motor[0] == 0 && Wire.motor[1] == 0 && Wire.motor[2] == 10);
+    assert(logicalMotor(0) == 0 && logicalMotor(1) == 0 && logicalMotor(2) == 10);
     cmdLegacy("stop");
     assert(Wire.readRequests == 0); // No hidden encoder resets/reads or other registers.
 
     cmdLegacy("arm");
-    for (const char* invalid : {"motor 1 59 1000", "motor 1 -59 1000", "motor 1 10 3001",
+    for (const char* invalid : {"motor 1 128 1000", "motor 1 -128 1000", "motor 1 10 3001",
                                "motor 0 10 1000", "motor 1 10.0 1000", "motor 1 nan 1000",
                                "motor 1 10 1e30", "motor 1 0 1000", "motor 1 1 49"}) {
         writes = Wire.writes.size(); cmdLegacy(invalid);
         assert(!running && Wire.writes.size() == writes);
     }
-    cmdLegacy("motor 3 -58 3000"); assert(running && Wire.motor[2] == -58);
+    cmdLegacy("motor 3 -58 3000"); assert(running && logicalMotor(2) == -58);
     inputLegacy("!\n"); stoppedLegacy();
     inputLegacy("arx\bm\n"); assert(enabled); cmdLegacy("motor 2 5 1000");
     cmdLegacy("stop"); stoppedLegacy();
@@ -143,8 +204,8 @@ int main() {
     assert((Wire.writes[1] == std::vector<uint8_t>{21,1}));
     assert((Wire.writes[2] == std::vector<uint8_t>{51,0,0,0,0}));
     cmdLegacy("arm"); cmdLegacy("profile 1 0"); assert(selectedType == 2 && selectedPolarity == 1);
-    cmdLegacy("motor 2 10 1000"); assert(running && Wire.motor[0] == 0 && Wire.motor[1] == 10);
-    assert((Wire.writes.back() == std::vector<uint8_t>{51,0,10,0,0}));
+    cmdLegacy("motor 2 10 1000"); assert(running && logicalMotor(0) == 0 && logicalMotor(1) == 10);
+    assert((Wire.writes.back() == std::vector<uint8_t>{51,0,246,0,0}));
     cmdLegacy("transport single"); assert(!singleWrites); // Busy edits rejected.
     cmdLegacy("stop"); stoppedLegacy(); cmdLegacy("profile 2 0");
     assert(!configured && !enabled && selectedPolarity == 0);
@@ -165,7 +226,7 @@ int main() {
         assert(running && Wire.activeReg == 31);
         const auto pwmStart = began;
         hostTime += 20; updateTest();
-        for (int i = 0; i < 4; ++i) assert(Wire.motor[i] == (i == channel-1 ? 40 : 0));
+        for (int i = 0; i < 4; ++i) assert(logicalMotor(i) == (i == channel-1 ? 40 : 0));
         hostTime = pwmStart+1000; updateTest(); stoppedLegacy();
         for (int v : activeOutputs) assert(v == 0);
         assert(Wire.activeReg == 31);

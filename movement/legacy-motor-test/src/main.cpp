@@ -1,45 +1,21 @@
 /*
-V10 MONOREPO LAB: observed-axis adapter; +X right, +Y forward, +W clockwise.
-`orientation v9` restores the prior input mapping for exact comparisons.
-Lab wheel map reported by user: M1 rear-left, M2 front, M3 rear-right.
-The adapter rotates the working legacy frame to that front. Pure lab forward
-leaves M2 at zero. Rolling signs/accuracy still need testing; no heading hold.
-Teammate's M2 adapter, wheel models, trims, previews and timed squares remain.
-Boot mixer=legacy preserves the teammate's V5 wheel model with an axis adapter.
-Original mode preserves the old SWRM_Leds coefficients. Geometry mode is
-adjustable and provisional; reference drawing labels are NOT verified motor
-channels. See ../docs/LAB_RUNBOOK.md for exact Mac commands, models, and lab
-test options. Current boot defaults: motor type 1, encoder polarity 0, block
-speed writes. The user verified independent M1/M2/M3, reverse M2 and M2 at speed
-30 with these settings. Geometry below remains provisional. Historical context
-follows: Motor comparison V4: original speed interface plus refreshed open-loop
-PWM
-==================================================
-The original demo starts motion automatically and repeats it. This program keeps
-its important driver values, but requires init -> arm -> a test command and runs
-each test only once. Speed mode uses register 51; explicit PWM mode uses
-register 31 with repeated full snapshots. Neither mode sends periodic idle
-writes.
-
-EXACT VALUES FROM THE ORIGINAL SOURCE:
-  device 0x34; SDA=21; SCL=22; 100kHz; motor-type register 20 receives 1;
-  encoder-polarity register 21 receives 1; speed register 51 gets four bytes;
-  driveRobot(0,1,0) produces about +58,-58,0,0, for 3000ms, then speed zeros.
-
-The original calls type 1 "N20"; current Hiwonder docs call N20 type 2. Here 1
-is an explicit COMPATIBILITY TEST, not a claim that the docs are wrong for all
-boards. Speed values are pulses per 10ms, not percentages. +58 can be fast.
-Start with a single wheel at +10 and keep every wheel raised for this bench
-experiment.
-
-Power-cycle the USB-only setup before uploading; this program cannot guarantee a
-stop from a previously powered driver if communication is broken. It does not
-automatically start motors on boot, init, help or status. `!` sends a software
-stop, but physical power removal is the fallback if that write fails.
+V15 Kiwi movement: +X right, +Y forward, +W clockwise; M2 inversion at I2C.
+init leaves disarmed. Explicit square/spin auto-arm through the existing guard;
+stop cancels all motion/queued starts. Settings and networking are separate
+files. See ../README.md for setup, calibration defaults, diagnostics and test
+limits. HUB75 startup below is preserved from origin/main; disable its build
+flag for motor-only lab comparisons. No heading/floor-position feedback is
+implemented.
 */
 #include <Arduino.h>
-#include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include <Wire.h>
+#if defined(SWRM_ENABLE_LED_PANEL) && SWRM_ENABLE_LED_PANEL
+#include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
+#endif
+#include "../include/mqtt_controller.h"
+#include "../include/robot_commands.h"
+#include "../include/robot_settings.h"
+#include <atomic>
 #include <cmath> // Dot-product wheel mixing uses sin/cos; inputs are checked for NaN/Inf.
 #include <cstdint>
 #include <cstdlib>
@@ -54,8 +30,11 @@ constexpr uint8_t typeReg = 20, polarityReg = 21, speedReg = 51;
 constexpr uint8_t type = 1,
                   polarity = 0; // Bench-verified on this robot: independent
                                 // motion and positive counts.
-constexpr int maxCommand =
-    58; // Original active movement's largest wheel command.
+// Speed snapshots encode each wheel as a signed byte. Keep a symmetric range
+// so reversing M2 cannot turn -128 into an unrepresentable +128. This is an
+// encoding ceiling, NOT a measured driver/motor capability or a target to
+// reach.
+constexpr int maxCommand = 127;
 constexpr unsigned maxDurationMs =
     3000; // Original three-second movement interval.
 constexpr unsigned transactionTimeoutMs =
@@ -70,12 +49,7 @@ constexpr int maxPwmDuty =
     50; // Chosen raised-wheel bench cap; protocol allows +/-100.
 constexpr unsigned pwmRefreshMs =
     20; // Chosen 50Hz refresh for continuous PWM control.
-        /* LED board variables -----------------------------------
-        See
-        https://github.com/turtle-robotics/SWRM-Monorepo/blob/main/movement/LED_Panel/led.md
-        for more information
-       */
-
+#if defined(SWRM_ENABLE_LED_PANEL) && SWRM_ENABLE_LED_PANEL
 // RGB channel pins
 constexpr unsigned r1 = 25;
 constexpr unsigned g1 = 26;
@@ -99,11 +73,27 @@ constexpr unsigned clk = 16; // moved
 constexpr unsigned res_x = 64;
 constexpr unsigned res_y = 64;
 constexpr unsigned panel_chain = 2;
+#endif
 } // namespace legacy
+
+// Operator-selected defaults and experiment bounds, NOT motor specifications.
+// Keep these together so a future limit change reaches planner AND parser.
+namespace motion {
+constexpr unsigned minDurationMs = 50, defaultDriveMs = 1000;
+constexpr unsigned defaultSquareMs = 1200, defaultPauseMs = 1000,
+                   maxPauseMs = 2000;
+constexpr int defaultSpeed = 20, maxSpeed = legacy::maxCommand;
+} // namespace motion
+static_assert(
+    legacy::maxCommand <= INT8_MAX && motion::maxSpeed <= legacy::maxCommand,
+    "Wheel speed and M2 sign reversal must fit the signed-byte payload.");
 
 // State starts explicitly disabled. Configuration and arming are separate
 // steps.
 bool configured = false, enabled = false, running = false, broken = false;
+bool spinActive =
+    false; // Continuous speed hold; cancelled by the common stop/fault path.
+std::atomic<robot::Command> pendingRobotCommand{robot::Command::none};
 // V3: pending, operator-selected comparisons. Edits are allowed only while idle
 // and disarmed, and invalidate initialization. No edit automatically runs
 // motors.
@@ -121,23 +111,107 @@ unsigned writeGapMs =
 uint32_t began = 0, testMs = 0, lastReport = 0, lastRetry = 0;
 unsigned stopRetries = 0; // Zero means no failed-stop retry is pending.
 uint8_t lastError = 0, lastReg = 0; // Last failed write, retained for status.
+uint32_t lastWriteEnded =
+    0;                // I2C completion BEFORE logging/optional post-write gap.
 char buffer[96] = {}; // Fixed command storage; no heap allocation needed.
 unsigned used = 0;
 bool discard =
     false; // Reject overlong/unsupported input through the next newline.
 
-// One arm authorizes one four-leg square. Cache the complete plan at its start;
+// One arm authorizes the selected one-shot, bounded or endless square run.
+// Cache the complete plan at its start;
 // normal commands cannot replace a leg or change settings during corner pauses.
 struct SquarePattern {
   bool active = false, pausing = false;
   unsigned leg = 0, sideMs = 0, pauseMs = 0;
+  unsigned durations[4] = {};
+  uint32_t cycles = 0, cycleLimit = 1; // Limit 0 means explicit endless mode.
+  bool attemptOpen = false; // A completed cycle's pause is not a new attempt.
   uint32_t pauseBegan = 0;
   int outputs[4][3] = {};
 };
 SquarePattern squarePattern;
+struct SquareStats {
+  uint32_t attempts = 0, completed = 0, faults = 0, cancelled = 0;
+  uint32_t streak = 0, best = 0;
+};
+SquareStats squareStats; // RAM; init preserves counts, reboot clears them.
+struct WriteFault {
+  bool valid = false;
+  uint32_t at = 0, elapsed = 0;
+  unsigned leg = 0, length = 0, clock = 0;
+  uint8_t reg = 0, error = 0, data[4] = {};
+};
+WriteFault firstWriteFault; // First failure since init; zero retries cannot
+                            // replace it.
+
+const char *wireResultName(uint8_t result) {
+  switch (result) {
+  case 0:
+    return "ok";
+  case 1:
+    return "buffer-too-long";
+  case 2:
+    return "nack";
+  case 3:
+    return "data-nack";
+  case 4:
+    return "other-error";
+  case 5:
+    return "timeout";
+  default:
+    return "unknown";
+  }
+}
+void showSquareStats() {
+  Serial.printf(
+      "SQUARE STATS attempts=%lu completed=%lu faults=%lu cancelled=%lu "
+      "streak=%lu best=%lu target=10 (RAM; init preserves counts)\n",
+      (unsigned long)squareStats.attempts, (unsigned long)squareStats.completed,
+      (unsigned long)squareStats.faults, (unsigned long)squareStats.cancelled,
+      (unsigned long)squareStats.streak, (unsigned long)squareStats.best);
+}
+void showWriteFault() {
+  if (!firstWriteFault.valid) {
+    Serial.println("FIRST WRITE FAULT: none since init.");
+    return;
+  }
+  const auto &f = firstWriteFault;
+  Serial.printf("FIRST WRITE FAULT t=%lums leg=%u/4 register=%u error=%u (%s) "
+                "tx=%lums clock=%uHz bytes=%u data=",
+                (unsigned long)f.at, f.leg, unsigned(f.reg), unsigned(f.error),
+                wireResultName(f.error), (unsigned long)f.elapsed, f.clock,
+                f.length);
+  for (unsigned i = 0; i < f.length && i < sizeof(f.data); ++i)
+    Serial.printf("%02X ", unsigned(f.data[i]));
+  Serial.println(
+      "; leg=0 means outside square; error 4 alone does not identify cause.");
+}
 constexpr float squareX[4] = {0, 1, 0, -1};
 constexpr float squareV9Y[4] = {-1, 0, 1, 0};
 const char *const squareNames[4] = {"forward", "right", "backward", "left"};
+
+// Compiled boot defaults survive reboot. Serial tuning remains RAM-only;
+// explicit square-leg reset still selects unity for diagnostic comparisons.
+using SquareLegTuning = robot::LegTuning;
+SquareLegTuning squareTuning[4] = {
+    robot::selected.square.legs[0], robot::selected.square.legs[1],
+    robot::selected.square.legs[2], robot::selected.square.legs[3]};
+void showSquareTuning() {
+  for (unsigned leg = 0; leg < 4; ++leg)
+    Serial.printf("SQUARE LEG %s timeScale=%.3f trims=%.3f,%.3f,%.3f (RAM; "
+                  "multiply global trims)\n",
+                  squareNames[leg], double(squareTuning[leg].timeScale),
+                  double(squareTuning[leg].trim[0]),
+                  double(squareTuning[leg].trim[1]),
+                  double(squareTuning[leg].trim[2]));
+}
+int squareLegIndex(const char *name) {
+  for (unsigned leg = 0; leg < 4; ++leg)
+    if (!strcmp(name, squareNames[leg]))
+      return int(leg);
+  return -1;
+}
 
 enum class Mixer { legacy, original, geometry };
 Mixer selectedMixer = Mixer::legacy; // Start with the teammate's working model.
@@ -207,7 +281,7 @@ float motorTrim[3] = {1, 1, 1};
 constexpr float minMotorTrim = 0.5f,
                 maxMotorTrim = 1.5f; // Chosen experiment bounds.
 constexpr int maxDriveCommand =
-    30; // Keep the prior movement ceiling after trims.
+    motion::maxSpeed; // Shared wheel ceiling after trims.
 
 bool setMotorTrim(unsigned channel, float multiplier) {
   if (enabled || running || squarePattern.active || stopRetries ||
@@ -240,13 +314,14 @@ void showMotorTrims() {
 // speed is a reference pulses/10ms scale. Common limiting preserves ratios
 // before rounding. Original mode uses the old coefficients; at the same output
 // scale, rounding differs from old truncation by at most one count command.
-bool computeWheelCommands(float x, float y, float w, int speed, int (&out)[3]) {
+bool computeWheelCommands(float x, float y, float w, int speed, int (&out)[3],
+                          const float *legTrim = nullptr) {
   for (int &value : out)
     value = 0;
   if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(w) ||
       std::fabs(x) > 1 || std::fabs(y) > 1 || std::fabs(w) > 1 || speed < 1 ||
-      speed > 30)
-    return false; // 30 is the successfully tested speed, not a motor rating.
+      speed > motion::maxSpeed)
+    return false; // Experiment cap, not a motor rating.
   // Actual channel positions: M1 rear-left, M2 front, M3 rear-right. Rotate
   // the existing model frame instead of changing its mixer or motor signs.
   // For legacy this yields M1=.5*x-.866*y, M2=-x, M3=.5*x+.866*y (W=0).
@@ -289,13 +364,18 @@ bool computeWheelCommands(float x, float y, float w, int speed, int (&out)[3]) {
     if (!std::isfinite(motorTrim[i]) || motorTrim[i] < minMotorTrim ||
         motorTrim[i] > maxMotorTrim)
       return false;
-    requests[i] = speed * mix[i] / peak * motorTrim[i];
+    const float extraTrim = legTrim ? legTrim[i] : 1;
+    if (!std::isfinite(extraTrim) || extraTrim < minMotorTrim ||
+        extraTrim > maxMotorTrim)
+      return false;
+    requests[i] = speed * mix[i] / peak * motorTrim[i] * extraTrim;
     if (std::fabs(requests[i]) > trimmedPeak)
       trimmedPeak = std::fabs(requests[i]);
   }
-  // If a trim pushes a wheel above 30, scale ALL requests down together to
-  // preserve the trimmed ratios. Never clip wheels independently or energize
-  // a wheel whose original request was zero. Rounding has finite resolution.
+  // If a trim pushes a wheel above the encoding ceiling, scale ALL requests
+  // down together to preserve the trimmed ratios. Never clip wheels
+  // independently or energize a wheel whose original request was zero. Rounding
+  // has finite resolution.
   const float capScale =
       trimmedPeak > maxDriveCommand ? maxDriveCommand / trimmedPeak : 1;
   for (unsigned i = 0; i < 3; ++i)
@@ -306,13 +386,23 @@ bool computeWheelCommands(float x, float y, float w, int speed, int (&out)[3]) {
 // Pure square planner: all sides must be valid/nonzero before any motor write.
 // Equal elapsed times do not guarantee equal measured distances or closure.
 bool planSquare(unsigned sideMs, int speed, unsigned pauseMs,
-                int (&outputs)[4][3]) {
-  if (sideMs < 50 || sideMs > legacy::maxDurationMs || pauseMs > 2000)
+                int (&outputs)[4][3], unsigned *durations = nullptr) {
+  if (sideMs < motion::minDurationMs || sideMs > legacy::maxDurationMs ||
+      pauseMs > motion::maxPauseMs)
     return false;
   for (unsigned i = 0; i < 4; ++i) {
-    if (!computeWheelCommands(squareX[i], squareY(i), 0, speed, outputs[i]) ||
+    const float scale = squareTuning[i].timeScale;
+    if (!std::isfinite(scale) || scale < 0.5f || scale > 1.5f)
+      return false;
+    const long duration = std::lround(sideMs * scale);
+    if (duration < motion::minDurationMs || duration > legacy::maxDurationMs)
+      return false;
+    if (!computeWheelCommands(squareX[i], squareY(i), 0, speed, outputs[i],
+                              squareTuning[i].trim) ||
         (!outputs[i][0] && !outputs[i][1] && !outputs[i][2]))
       return false;
+    if (durations)
+      durations[i] = unsigned(duration);
   }
   return true;
 }
@@ -322,18 +412,36 @@ bool planSquare(unsigned sideMs, int speed, unsigned pauseMs,
 // motion.
 bool writeRegister(uint8_t reg, const uint8_t *data, unsigned length,
                    bool verbose = true) {
+  const uint32_t txBegan = millis();
   Wire.beginTransmission(legacy::address);
   Wire.write(reg);
   for (unsigned i = 0; i < length; ++i)
     Wire.write(data[i]);
   const uint8_t result = Wire.endTransmission();
+  lastWriteEnded = millis();
+  const uint32_t elapsed = lastWriteEnded - txBegan;
+  if (result && !firstWriteFault.valid) {
+    firstWriteFault.valid = true;
+    firstWriteFault.at = lastWriteEnded;
+    firstWriteFault.elapsed = elapsed;
+    firstWriteFault.leg = squarePattern.active ? squarePattern.leg + 1 : 0;
+    firstWriteFault.reg = reg;
+    firstWriteFault.error = result;
+    firstWriteFault.length = length;
+    firstWriteFault.clock = selectedClock;
+    for (unsigned i = 0; i < length && i < sizeof(firstWriteFault.data); ++i)
+      firstWriteFault.data[i] = data[i];
+  }
   // Print the actual data too, not just the caller's intended wheel values.
   if (verbose || result) {
     Serial.printf("WRITE register=%u bytes=%u result=%u data=", unsigned(reg),
                   length, unsigned(result));
     for (unsigned i = 0; i < length; ++i)
       Serial.printf("%02X ", unsigned(data[i]));
-    Serial.println("");
+    Serial.printf("t=%lums tx=%lums leg=%u/4 (%s)\n",
+                  (unsigned long)lastWriteEnded, (unsigned long)elapsed,
+                  squarePattern.active ? squarePattern.leg + 1 : 0,
+                  wireResultName(result));
   }
   if (writeGapMs)
     delay(writeGapMs);
@@ -347,6 +455,13 @@ bool writeRegister(uint8_t reg, const uint8_t *data, unsigned length,
 // Same four logical channel requests as original setMotorSpeeds(). Default is a
 // four-byte block; individual writes remain a diagnostic option. M4 stays zero.
 bool sendSpeeds(int a = 0, int b = 0, int c = 0, bool quietRefresh = false) {
+  // Validate before both the sign adapter and int8_t conversion. A caller
+  // cannot wrap a too-large speed into reverse, or a PWM request beyond its
+  // separate duty limit, by bypassing the command parser.
+  const int limit = pwmMode ? legacy::maxPwmDuty : legacy::maxCommand;
+  for (int value : {a, b, c})
+    if (value < -limit || value > limit)
+      return false;
   a = driverCommand(0, a);
   b = driverCommand(1, b);
   c = driverCommand(2, c);
@@ -361,7 +476,7 @@ bool sendSpeeds(int a = 0, int b = 0, int c = 0, bool quietRefresh = false) {
   if (!singleWrites) {
     const uint8_t data[4] = {uint8_t(int8_t(a)), uint8_t(int8_t(b)),
                              uint8_t(int8_t(c)), 0};
-    return writeRegister(legacy::speedReg, data, 4);
+    return writeRegister(legacy::speedReg, data, 4, !quietRefresh);
   }
   // V2 channel-isolation test: Hiwonder's official Pi example addresses one
   // motor with register 50+motor_id and a ONE-byte payload. Thus 51=M1,
@@ -392,11 +507,25 @@ bool sendSpeeds(int a = 0, int b = 0, int c = 0, bool quietRefresh = false) {
   return true;
 }
 
+// Record only a full cycle with an acknowledged final zero write.
+void recordSquareCompletion() {
+  ++squareStats.completed;
+  ++squareStats.streak;
+  ++squarePattern.cycles;
+  if (squareStats.streak > squareStats.best)
+    squareStats.best = squareStats.streak;
+  squarePattern.attemptOpen = false;
+}
 // A normal stop always disables the next motion. Failure latches a fault and
 // schedules a few zero-only retries; it never permits continuing a motor test.
-void stopTest(const char *reason) {
-  squarePattern.active = squarePattern.pausing =
-      false; // Stop/fault never resumes a pattern.
+void stopTest(const char *reason, bool squareFinished = false) {
+  pendingRobotCommand.store(robot::Command::none);
+  spinActive = false;
+  const bool wasSquare = squarePattern.active;
+  const bool attemptOpen = wasSquare && squarePattern.attemptOpen;
+  // Keep square context through the zero write so a final/corner stop fault
+  // records its leg. Cancel the pattern before returning or any retry tick.
+  squarePattern.pausing = false;
   running = enabled = false;
   for (int &value : activeOutputs)
     value = 0;
@@ -408,19 +537,43 @@ void stopTest(const char *reason) {
                    "removal if needed.");
   } else
     stopRetries = 0;
+  squarePattern.active = false;
+  if (attemptOpen) {
+    if (broken) {
+      ++squareStats.faults;
+      squareStats.streak = 0;
+    } else if (squareFinished) {
+      recordSquareCompletion();
+    } else {
+      ++squareStats.cancelled;
+      squareStats.streak = 0;
+    }
+  } else if (wasSquare && broken) {
+    // A failed stop between completed cycles still breaks reliability.
+    squareStats.streak = 0;
+  }
+  squarePattern.attemptOpen = false;
+  if (wasSquare)
+    showSquareStats();
   Serial.println(reason);
+  if (broken)
+    showWriteFault();
 }
 
 // Test the original numeric settings step by step. Stop at the first failure,
 // preserving which register failed. This is not an address-only connectivity
 // check.
 void initialize() {
+  pendingRobotCommand.store(robot::Command::none);
+  if (spinActive)
+    stopTest("Spin cancelled by initialization.");
   if (squarePattern.active)
     stopTest("Square cancelled by initialization.");
   configured = enabled = running = false;
   broken = false;
   stopRetries = 0;
   lastError = lastReg = 0;
+  firstWriteFault = WriteFault{};
   Serial.printf("INIT: type=%u polarity=%u transport=%s clock=%uHz gap=%ums\n",
                 unsigned(selectedType), unsigned(selectedPolarity),
                 singleWrites ? "single" : "block", selectedClock, writeGapMs);
@@ -462,16 +615,16 @@ void initialize() {
 // driver: reg 0 = two little-endian supply millivolt bytes; reg 60 = four
 // signed counts.
 // https://github.com/PX4/PX4-Autopilot/blob/main/src/drivers/hiwonder_emm/HiwonderEMM.cpp
-bool readDiagnostic(uint8_t reg, uint8_t *data, uint8_t length) {
-  if (enabled || running || stopRetries) {
-    Serial.println("ERR: diagnostics require idle/disarmed; stop first.");
-    return false;
-  }
+// Bounded diagnostics retain the idle-only guard below; a short read never
+// becomes a valid zero count.
+static bool readRegisterBytes(uint8_t reg, uint8_t *data, uint8_t length) {
   Wire.beginTransmission(legacy::address);
   Wire.write(reg);
   const uint8_t result =
       Wire.endTransmission(false); // Repeated START before reading.
   if (result) {
+    lastError = result;
+    lastReg = reg;
     Serial.printf("READ register=%u select error=%u; no value available.\n",
                   unsigned(reg), unsigned(result));
     return false;
@@ -488,6 +641,14 @@ bool readDiagnostic(uint8_t reg, uint8_t *data, uint8_t length) {
   for (unsigned i = 0; i < length; ++i)
     data[i] = uint8_t(Wire.read());
   return true;
+}
+
+bool readDiagnostic(uint8_t reg, uint8_t *data, uint8_t length) {
+  if (enabled || running || stopRetries) {
+    Serial.println("ERR: diagnostics require idle/disarmed; stop first.");
+    return false;
+  }
+  return readRegisterBytes(reg, data, length);
 }
 
 void showVoltage() {
@@ -522,37 +683,57 @@ void showEncoders() {
 }
 
 void showHelp() {
-  Serial.println("KIWI MONOREPO LAB v10: orientation=lab (+Y forward); M2 "
-                 "reversed; mixer=legacy; DISARMED.");
+  Serial.println(
+      "KIWI MONOREPO LAB v15: shared profile; square/stop/spin; "
+      "orientation=lab (+Y forward); M2 reversed; mixer=legacy; DISARMED.");
   Serial.println("init | status | arm | stop | ! | help");
   Serial.println("voltage | enc (idle/disarmed only; read driver "
                  "supply/counters; no motor command)");
-  Serial.println("drive X Y [MS [SPEED]] (speed mode only; X/Y -1..1; defaults "
-                 "1000ms,20 pulses/10ms; max 3000ms,30)");
+  Serial.printf("drive X Y [MS [SPEED]] (speed mode only; X/Y -1..1; defaults "
+                "%ums,%d pulses/10ms; max %ums,%d)\n",
+                motion::defaultDriveMs, motion::defaultSpeed,
+                legacy::maxDurationMs, motion::maxSpeed);
   Serial.println(
       "twist X Y W [MS [SPEED]] (same limits; W -1..1, positive clockwise)");
   Serial.println("preview X Y [W [SPEED]] (idle/disarmed; calculate only, NO "
                  "driver writes)");
-  Serial.println("square [SIDE_MS [SPEED [PAUSE_MS]]] (one arm, "
-                 "forward/right/backward/left; defaults 1200,20,1000 = 7.8s)");
+  Serial.println("square | spin | stop (one-word starts auto-arm after init; "
+                 "square repeats, spin holds; stop disarms)");
+  Serial.println("square SIDE_MS [SPEED [PAUSE_MS]] (diagnostic ONE cycle "
+                 "after separate arm; defaults 1200,20,1000)");
   Serial.println("preview-square [SIDE_MS [SPEED [PAUSE_MS]]] (disarmed; all "
                  "four legs, NO driver writes)");
-  Serial.println("Square: side 50..3000ms, speed 1..30, pause 0..2000ms; timed "
-                 "pattern, NOT measured distance.");
+  Serial.println("square-endless [SIDE_MS [SPEED [PAUSE_MS]]] | square-repeat "
+                 "COUNT [SIDE_MS [SPEED [PAUSE_MS]]]");
+  Serial.println("Repeats pause after the fourth side too; stop/! cancels now, "
+                 "faults cancel the run. No controller-loss heartbeat yet.");
+  Serial.println("square-leg [reset] | square-leg DIRECTION TIME_SCALE M1_TRIM "
+                 "M2_TRIM M3_TRIM (idle/disarmed; all 0.5..1.5; RAM)");
+  Serial.println("square-test DIRECTION [SIDE_MS [SPEED]] (one tuned leg after "
+                 "arm; direction=forward|right|backward|left)");
+  Serial.println("Square leg factors multiply global trims; use trim reset for "
+                 "tuning. drive/twist do not use square leg factors.");
+  Serial.printf("Square: side %u..%ums, speed 1..%d, pause 0..%ums; timed "
+                "pattern, NOT measured distance.\n",
+                motion::minDurationMs, legacy::maxDurationMs, motion::maxSpeed,
+                motion::maxPauseMs);
+  Serial.println("square-stats | square-stats reset (counts "
+                 "completions/faults/cancels/streak; reset requires "
+                 "idle/disarmed; RAM only)");
   Serial.println("mixer legacy|original|geometry (idle/disarmed; RAM only; no "
                  "init needed)");
   Serial.println("orientation lab|v9 (idle/disarmed; RAM only; lab = +X "
                  "right/+Y forward; v9 restores old commands)");
   Serial.println("trim CHANNEL MULTIPLIER | trim reset (idle/disarmed; "
                  "0.5..1.5; defaults 1; no init needed)");
-  Serial.println(
-      "Trims affect drive/twist/square and previews; raw motor/PWM/original "
-      "tests bypass them. Movement cap remains 30.");
+  Serial.printf("Trims affect drive/twist/square and previews; raw "
+                "motor/PWM/original tests bypass them. Shared wheel cap=%d.\n",
+                maxDriveCommand);
   Serial.println("wheel CHANNEL ANGLE_DEG SIGN (geometry only; tangent angles "
                  "from FORWARD toward LEFT; sign +/-1)");
   showOrientation();
-  Serial.println("X/Y/W are weights, NOT centimeters; changing orientation "
-                 "does not fix heading drift.");
+  Serial.println("drive/twist X/Y/W are weights. Changing "
+                 "orientation does not fix heading drift.");
   Serial.println("Geometry defaults 150/30/270,+1 assume reference "
                  "R1/R2/R3=M1/M2/M3; mapping UNKNOWN.");
   Serial.println("profile TYPE POLARITY (TYPE 1 or 2; POLARITY 0 or 1)");
@@ -561,8 +742,12 @@ void showHelp() {
                  "uses a full block)");
   Serial.println("Change settings only while disarmed; init required after "
                  "edits. Settings reset at boot.");
-  Serial.println("motor CHANNEL SPEED MS  (channel 1..3; signed speed 1..58; "
-                 "time 50..3000)");
+  Serial.printf("motor CHANNEL SPEED MS (channel 1..3; signed speed magnitude "
+                "1..%d; time %u..%ums)\n",
+                legacy::maxCommand, motion::minDurationMs,
+                legacy::maxDurationMs);
+  Serial.println("127 is a signed-byte encoding limit, NOT a measured "
+                 "achievable speed. Defaults remain 20; increase gradually.");
   Serial.println("original  (after arm: old LOGICAL pattern +58,-58,0; wire "
                  "+58,+58,0; 3000ms ONCE)");
   Serial.println(
@@ -571,7 +756,17 @@ void showHelp() {
                  "refreshed every 20ms.");
 }
 
+void showRobotProfile() {
+  Serial.printf(
+      "ROBOT=%s clientId=%s commandTopic=%s bootProfile=%s "
+      "B-inherits-unvalidated=%d spinSpeed=%d (UNTESTED) spinActive=%d\n",
+      robot::selected.identity, robot::selected.mqttClientId,
+      robot::selected.commandTopic, robot::selected.square.revision,
+      robot::selected.inheritsUnvalidated, robot::selected.spinSpeed,
+      spinActive);
+}
 void showStatus() {
+  showRobotProfile();
   Serial.printf("configured=%d armed=%d running=%d fault=%d lastError=%u "
                 "lastRegister=%u\n",
                 configured, enabled, running, broken, unsigned(lastError),
@@ -582,6 +777,11 @@ void showStatus() {
   Serial.printf("MODE=%s; output register=%u; units=%s\n",
                 pwmMode ? "PWM" : "SPEED", pwmMode ? 31u : 51u,
                 pwmMode ? "percent duty" : "pulses/10ms");
+  Serial.printf("Speed limits: drive/twist/square=1..%d; raw motor=-%d..%d; "
+                "PWM duty=-%d..%d (encoding/test limits, not "
+                "motor ratings).\n",
+                motion::maxSpeed, legacy::maxCommand, legacy::maxCommand,
+                legacy::maxPwmDuty, legacy::maxPwmDuty);
   Serial.printf("mixer=%s; orientation=%s; weights, NOT distances\n",
                 mixerName(), orientationName());
   showOrientation();
@@ -591,6 +791,13 @@ void showStatus() {
       "squareActive=%d leg=%u/4 pausing=%d sideMs=%u pauseMs=%u\n",
       squarePattern.active, squarePattern.active ? squarePattern.leg + 1 : 0,
       squarePattern.pausing, squarePattern.sideMs, squarePattern.pauseMs);
+  Serial.printf("squareCycles=%lu cycleLimit=%lu (0=endless); no "
+                "controller-loss heartbeat\n",
+                (unsigned long)squarePattern.cycles,
+                (unsigned long)squarePattern.cycleLimit);
+  showSquareTuning();
+  showSquareStats();
+  showWriteFault();
   for (unsigned i = 0; i < 3; ++i)
     Serial.printf("M%u tangentAngle=%.1f sign=%d (geometry only; from forward "
                   "toward left; RAM)\n",
@@ -602,8 +809,9 @@ void showStatus() {
 // Public startTest and driveRobot reject an active square, including a corner's
 // zero-output pause.
 static bool beginTimedOutput(int a, int b, int c, unsigned milliseconds) {
-  if (!configured || !enabled || broken || running || milliseconds < 50 ||
-      stopRetries || milliseconds > legacy::maxDurationMs)
+  if (!configured || !enabled || broken || running ||
+      milliseconds < motion::minDurationMs || stopRetries ||
+      milliseconds > legacy::maxDurationMs)
     return false;
   const int limit = pwmMode ? legacy::maxPwmDuty : legacy::maxCommand;
   for (int value : {a, b, c})
@@ -613,8 +821,6 @@ static bool beginTimedOutput(int a, int b, int c, unsigned milliseconds) {
     stopTest("Zero pattern; stopped/disarmed.");
     return true;
   }
-  began = lastReport = lastPwmRefresh = millis();
-  testMs = milliseconds;
   Serial.printf("REQUEST: M1=%d M2=%d M3=%d %s, %ums\n", a, b, c,
                 pwmMode ? "percent PWM" : "pulses/10ms", milliseconds);
   Serial.printf("DRIVER: M1=%d M2=%d M3=%d (hardware signs applied)\n",
@@ -626,6 +832,11 @@ static bool beginTimedOutput(int a, int b, int c, unsigned milliseconds) {
     stopTest("FAULT: test command failed; disarmed.");
     return false;
   }
+  // Start at the acknowledged transaction, not before REQUEST/DRIVER logging
+  // or the I2C call. Include post-write logging/gap in elapsed running time.
+  began = lastWriteEnded;
+  lastReport = lastPwmRefresh = began;
+  testMs = milliseconds;
   running = true;
   activeOutputs[0] = a;
   activeOutputs[1] = b;
@@ -646,42 +857,177 @@ bool startTest(int a, int b, int c, unsigned milliseconds) {
 // true means accepted, not measured physical motion. Keep loop() running; do
 // not call every iteration or follow with delay(). init + arm are still
 // required.
-bool driveRobot(float x, float y, float w = 0, unsigned milliseconds = 1000,
-                int speed = 20) {
+bool driveRobot(float x, float y, float w = 0,
+                unsigned milliseconds = motion::defaultDriveMs,
+                int speed = motion::defaultSpeed) {
   int outputs[3] = {};
   if (pwmMode || !computeWheelCommands(x, y, w, speed, outputs))
     return false;
   return startTest(outputs[0], outputs[1], outputs[2], milliseconds);
 }
 
-// Starts ONE timed square: forward -> right -> backward -> left, W=0 each leg.
+// Starts timed squares: forward -> right -> backward -> left, W=0 each leg.
+// cycleLimit defaults to one; zero explicitly selects endless operation.
 // Call once after init + arm, then keep loop() running. No blocking delay and
 // no arm is needed between legs. Uses the selected mixer; no physical units
-// assumed. A reported leg-3 I2C failure with 300ms pauses did not recur in the
-// user's comparison with 1000ms pauses. Use that tested schedule by default,
-// without inferring an electrical cause or retrying failed nonzero packets
-// automatically.
-bool driveSquare(unsigned sideMs = 1200, int speed = 20,
-                 unsigned pauseMs = 1000) {
+// assumed. 1000ms pauses allow visible stopped corners; they have ALSO faulted
+// in the lab. This is an experimental schedule, not an established
+// communication fix.
+bool driveSquare(unsigned sideMs = motion::defaultSquareMs,
+                 int speed = motion::defaultSpeed,
+                 unsigned pauseMs = motion::defaultPauseMs,
+                 uint32_t cycleLimit = 1) {
   if (pwmMode || squarePattern.active || !configured || !enabled || broken ||
       running || stopRetries)
     return false;
   int planned[4][3] = {};
-  if (!planSquare(sideMs, speed, pauseMs, planned))
-    return false;
-  if (!startTest(planned[0][0], planned[0][1], planned[0][2], sideMs))
+  unsigned durations[4] = {};
+  if (cycleLimit > 1000000 ||
+      !planSquare(sideMs, speed, pauseMs, planned, durations))
     return false;
   squarePattern = SquarePattern{};
   squarePattern.active = true;
   squarePattern.sideMs = sideMs;
   squarePattern.pauseMs = pauseMs;
+  squarePattern.cycleLimit = cycleLimit;
+  squarePattern.attemptOpen = true;
+  for (unsigned i = 0; i < 4; ++i)
+    squarePattern.durations[i] = durations[i];
   for (unsigned i = 0; i < 4; ++i)
     for (unsigned j = 0; j < 3; ++j)
       squarePattern.outputs[i][j] = planned[i][j];
-  Serial.printf("SQUARE mixer=%s: leg 1/4 forward; %ums per side, %ums between "
-                "sides. Timed, not measured.\n",
-                mixerName(), sideMs, pauseMs);
+  ++squareStats.attempts;
+  // Establish context BEFORE leg 1, including failures of its first write.
+  if (!beginTimedOutput(planned[0][0], planned[0][1], planned[0][2],
+                        durations[0])) {
+    if (squarePattern.active)
+      stopTest("Square start rejected; cancelled.");
+    return false;
+  }
+  Serial.printf(
+      "SQUARE mixer=%s: leg 1/4 forward; base=%ums, actual legs=%u/%u/%u/%ums, "
+      "pause=%ums, cycleLimit=%lu (0=endless). Timed, not measured.\n",
+      mixerName(), sideMs, durations[0], durations[1], durations[2],
+      durations[3], pauseMs, (unsigned long)cycleLimit);
   return true;
+}
+
+// The same guarded arm path serves diagnostics and explicit one-word starts.
+static bool armMovement() {
+  if (!configured || broken || stopRetries || running || squarePattern.active ||
+      spinActive)
+    return false;
+  if (!sendSpeeds()) {
+    broken = true;
+    stopTest("FAULT: arm zero write.");
+    return false;
+  }
+  enabled = true;
+  Serial.println("ARMED; no motion yet.");
+  return true;
+}
+
+const char *robot::resultName(robot::Result result) {
+  switch (result) {
+  case Result::started:
+    return "STARTED";
+  case Result::stopped:
+    return "STOPPED; disarmed";
+  case Result::queued:
+    return "QUEUED";
+  case Result::unknown:
+    return "ERR: unknown command; expected square, stop, spin";
+  case Result::notReady:
+    return "ERR: successful init required";
+  case Result::busy:
+    return "ERR: busy; stop first";
+  case Result::invalidSettings:
+    return "ERR: invalid settings; use lab/legacy, calibrated driver settings "
+           "and unity global trims";
+  case Result::fault:
+    return "FAULT: latched; inspect status; explicit init required, no "
+           "automatic recovery";
+  }
+  return "ERR";
+}
+
+bool initializeRobotMovement() {
+  initialize();
+  return configured && !broken;
+}
+void stopRobotMovement() { stopTest("STOPPED; disarmed."); }
+
+robot::Result queueRobotCommand(const char *bytes, std::size_t length) {
+  const auto cmd = robot::parseCommand(bytes, length);
+  if (cmd == robot::Command::none)
+    return robot::Result::unknown;
+  if (cmd == robot::Command::stop) {
+    pendingRobotCommand.store(
+        cmd); // Replace every queued start; never wait for space.
+    return robot::Result::queued;
+  }
+  auto empty = robot::Command::none;
+  return pendingRobotCommand.compare_exchange_strong(empty, cmd)
+             ? robot::Result::queued
+             : robot::Result::busy;
+}
+void onRobotConnectionLost() {
+  pendingRobotCommand.store(robot::Command::stop);
+}
+
+robot::Result handleRobotCommand(const char *bytes, std::size_t length) {
+  using robot::Result;
+  const auto cmd = robot::parseCommand(bytes, length);
+  if (cmd == robot::Command::none)
+    return Result::unknown;
+  if (cmd == robot::Command::stop) {
+    stopRobotMovement();
+    return broken ? Result::fault : Result::stopped;
+  }
+  if (broken || stopRetries)
+    return Result::fault;
+  if (!configured)
+    return Result::notReady;
+  if (running || squarePattern.active || spinActive ||
+      pendingRobotCommand.load() == robot::Command::stop)
+    return Result::busy;
+  if (pwmMode || singleWrites || selectedMixer != Mixer::legacy ||
+      selectedOrientation != DriveOrientation::lab ||
+      selectedType != legacy::type || selectedPolarity != legacy::polarity ||
+      selectedClock != legacy::busHz || writeGapMs)
+    return Result::invalidSettings;
+  for (float trim : motorTrim)
+    if (trim != 1)
+      return Result::invalidSettings;
+  // Validate the entire plan BEFORE arming or writing any nonzero output.
+  int planned[4][3] = {};
+  unsigned durations[4] = {};
+  int spin[3] = {};
+  const auto &profile = robot::selected.square;
+  if (cmd == robot::Command::square) {
+    if (!planSquare(profile.sideMs, profile.speed, profile.pauseMs, planned,
+                    durations))
+      return Result::invalidSettings;
+  } else if (robot::selected.spinSpeed < 1 || robot::selected.spinSpeed > 20 ||
+             !computeWheelCommands(0, 0, 1, robot::selected.spinSpeed, spin))
+    return Result::invalidSettings;
+  if (!armMovement())
+    return broken ? Result::fault : Result::notReady;
+  if (pendingRobotCommand.load() == robot::Command::stop) {
+    stopRobotMovement();
+    return broken ? Result::fault : Result::stopped;
+  }
+  const bool started =
+      cmd == robot::Command::square
+          ? driveSquare(profile.sideMs, profile.speed, profile.pauseMs, 0)
+          : startTest(spin[0], spin[1], spin[2], legacy::maxDurationMs);
+  if (!started) {
+    if (!broken)
+      stopRobotMovement();
+    return broken ? Result::fault : Result::invalidSettings;
+  }
+  spinActive = cmd == robot::Command::spin;
+  return Result::started;
 }
 
 // Whole base-10 numbers only, with bounds checked before any smaller-type cast.
@@ -714,8 +1060,9 @@ void command(char *text) {
   if (!count)
     return;
   const char *cmd = words[0];
-  if (count == 1 && !strcmp(cmd, "stop")) {
-    stopTest("STOPPED; disarmed.");
+  if (count == 1 && (!strcmp(cmd, "square") || !strcmp(cmd, "spin") ||
+                     !strcmp(cmd, "stop"))) {
+    Serial.println(robot::resultName(handleRobotCommand(cmd)));
     return;
   }
   if (count == 1 && !strcmp(cmd, "status")) {
@@ -724,6 +1071,21 @@ void command(char *text) {
   }
   if (count == 1 && !strcmp(cmd, "help")) {
     showHelp();
+    return;
+  }
+  if (!strcmp(cmd, "square-stats")) {
+    if (count == 1) {
+      showSquareStats();
+      return;
+    }
+    if (count == 2 && !strcmp(words[1], "reset") && !enabled && !running &&
+        !squarePattern.active && !stopRetries) {
+      squareStats = SquareStats{};
+      showSquareStats();
+      return;
+    }
+    Serial.println("ERR: square-stats [reset]; reset requires idle/disarmed, "
+                   "no pending stop retries.");
     return;
   }
   if (count == 1 && !strcmp(cmd, "voltage")) {
@@ -773,19 +1135,91 @@ void command(char *text) {
                    "init needed.");
     return;
   }
-  const bool previewSquare = !strcmp(cmd, "preview-square");
-  if ((!strcmp(cmd, "square") || previewSquare) && count <= 4) {
-    long sideMs = 1200, speed = 20, pauseMs = 1000;
-    int planned[4][3] = {};
-    if ((count >= 2 && !parseInt(words[1], sideMs)) ||
-        (count >= 3 && !parseInt(words[2], speed)) ||
-        (count == 4 && !parseInt(words[3], pauseMs)) || sideMs < 50 ||
-        sideMs > 3000 || speed < 1 || speed > 30 || pauseMs < 0 ||
-        pauseMs > 2000 ||
-        !planSquare(unsigned(sideMs), int(speed), unsigned(pauseMs), planned)) {
+  if (!strcmp(cmd, "square-leg")) {
+    if (enabled || stopRetries) {
       Serial.println(
+          "ERR: square-leg requires idle/disarmed, no pending stop retries.");
+      return;
+    }
+    if (count == 2 && !strcmp(words[1], "reset")) {
+      for (auto &tuning : squareTuning)
+        tuning = SquareLegTuning{};
+    } else if (count != 1) {
+      const int leg = count == 6 ? squareLegIndex(words[1]) : -1;
+      SquareLegTuning candidate;
+      bool valid = leg >= 0;
+      if (valid) {
+        valid = parseFloat(words[2], candidate.timeScale) &&
+                candidate.timeScale >= 0.5f && candidate.timeScale <= 1.5f;
+        for (unsigned i = 0; i < 3; ++i)
+          valid = parseFloat(words[i + 3], candidate.trim[i]) &&
+                  candidate.trim[i] >= 0.5f && candidate.trim[i] <= 1.5f &&
+                  valid;
+      }
+      if (!valid) {
+        Serial.println("ERR: square-leg DIRECTION TIME_SCALE M1 M2 M3; "
+                       "direction forward/right/backward/left; all factors "
+                       "0.5..1.5; or square-leg [reset].");
+        return;
+      }
+      squareTuning[leg] = candidate;
+    }
+    showSquareTuning();
+    return;
+  }
+  if (!strcmp(cmd, "square-test")) {
+    const int leg = count >= 2 ? squareLegIndex(words[1]) : -1;
+    long sideMs = motion::defaultSquareMs, speed = motion::defaultSpeed;
+    int planned[4][3] = {};
+    unsigned durations[4] = {};
+    if (count < 2 || count > 4 || leg < 0 ||
+        (count >= 3 && !parseInt(words[2], sideMs)) ||
+        (count == 4 && !parseInt(words[3], speed)) ||
+        sideMs < motion::minDurationMs || sideMs > legacy::maxDurationMs ||
+        speed < 1 || speed > motion::maxSpeed ||
+        !planSquare(unsigned(sideMs), int(speed), 0, planned, durations)) {
+      Serial.println("ERR: square-test DIRECTION [SIDE_MS [SPEED]]; check "
+                     "direction, limits and all tuned leg durations.");
+      return;
+    }
+    if (pwmMode || !startTest(planned[leg][0], planned[leg][1], planned[leg][2],
+                              durations[leg]))
+      Serial.println("ERR: square-test requires speed mode, successful init "
+                     "and separate arm.");
+    return;
+  }
+  const bool previewSquare = !strcmp(cmd, "preview-square");
+  const bool endlessSquare = !strcmp(cmd, "square-endless");
+  const bool repeatedSquare = !strcmp(cmd, "square-repeat");
+  if (!strcmp(cmd, "square") || previewSquare || endlessSquare ||
+      repeatedSquare) {
+    const unsigned offset = repeatedSquare ? 1 : 0;
+    long cycleLimit = endlessSquare ? 0 : 1;
+    if (count < 1 + offset || count > 4 + offset ||
+        (repeatedSquare &&
+         (!parseInt(words[1], cycleLimit) || cycleLimit < 1))) {
+      Serial.println("ERR: square[-endless]/preview-square [SIDE_MS [SPEED "
+                     "[PAUSE_MS]]] or square-repeat COUNT [SIDE_MS [SPEED "
+                     "[PAUSE_MS]]]; COUNT 1..1000000.");
+      return;
+    }
+    long sideMs = motion::defaultSquareMs, speed = motion::defaultSpeed,
+         pauseMs = motion::defaultPauseMs;
+    int planned[4][3] = {};
+    unsigned durations[4] = {};
+    if ((count >= 2 + offset && !parseInt(words[1 + offset], sideMs)) ||
+        (count >= 3 + offset && !parseInt(words[2 + offset], speed)) ||
+        (count == 4 + offset && !parseInt(words[3 + offset], pauseMs)) ||
+        sideMs < motion::minDurationMs || sideMs > legacy::maxDurationMs ||
+        speed < 1 || speed > motion::maxSpeed || pauseMs < 0 ||
+        pauseMs > motion::maxPauseMs ||
+        !planSquare(unsigned(sideMs), int(speed), unsigned(pauseMs), planned,
+                    durations)) {
+      Serial.printf(
           "ERR: square/preview-square [SIDE_MS [SPEED [PAUSE_MS]]]; side "
-          "50..3000; speed 1..30; pause 0..2000; nonzero legs required.");
+          "%u..%u; speed 1..%d; pause 0..%u; nonzero legs required.\n",
+          motion::minDurationMs, legacy::maxDurationMs, motion::maxSpeed,
+          motion::maxPauseMs);
       return;
     }
     if (previewSquare) {
@@ -795,19 +1229,26 @@ void command(char *text) {
         return;
       }
       showMotorTrims();
+      showSquareTuning();
+      const unsigned total = durations[0] + durations[1] + durations[2] +
+                             durations[3] + 3 * unsigned(pauseMs);
       Serial.printf("SQUARE PREVIEW mixer=%s orientation=%s side=%ldms "
                     "speed=%ld pause=%ldms total=%ldms; NO driver writes.\n",
                     mixerName(), orientationName(), sideMs, speed, pauseMs,
-                    4 * sideMs + 3 * pauseMs);
+                    long(total));
+      Serial.printf("Repeating cycle interval=%ums including fourth-corner "
+                    "pause; final bounded cycle omits that last pause.\n",
+                    total + unsigned(pauseMs));
       for (unsigned i = 0; i < 4; ++i)
         Serial.printf("Leg %u/4 %s X=%.0f Y=%.0f W=0: M1=%d M2=%d M3=%d "
-                      "pulses/10ms; DRIVER M1=%d M2=%d M3=%d\n",
+                      "pulses/10ms; DRIVER M1=%d M2=%d M3=%d; duration=%ums\n",
                       i + 1, squareNames[i], double(squareX[i]),
                       double(squareY(i)), planned[i][0], planned[i][1],
                       planned[i][2], driverCommand(0, planned[i][0]),
                       driverCommand(1, planned[i][1]),
-                      driverCommand(2, planned[i][2]));
-    } else if (!driveSquare(unsigned(sideMs), int(speed), unsigned(pauseMs)))
+                      driverCommand(2, planned[i][2]), durations[i]);
+    } else if (!driveSquare(unsigned(sideMs), int(speed), unsigned(pauseMs),
+                            uint32_t(cycleLimit)))
       Serial.println("ERR: square rejected; speed mode, successful init and "
                      "separate arm required.");
     return;
@@ -850,7 +1291,7 @@ void command(char *text) {
   }
   if (!strcmp(cmd, "preview") && count >= 3 && count <= 5) {
     float x = 0, y = 0, w = 0;
-    long speed = 20;
+    long speed = motion::defaultSpeed;
     int outputs[3] = {};
     if (enabled || stopRetries) {
       Serial.println(
@@ -861,8 +1302,9 @@ void command(char *text) {
         (count >= 4 && !parseFloat(words[3], w)) ||
         (count == 5 && !parseInt(words[4], speed)) ||
         !computeWheelCommands(x, y, w, int(speed), outputs)) {
-      Serial.println(
-          "ERR: preview X Y [W [SPEED]]; weights -1..1; speed 1..30.");
+      Serial.printf(
+          "ERR: preview X Y [W [SPEED]]; weights -1..1; speed 1..%d.\n",
+          motion::maxSpeed);
       return;
     }
     showMotorTrims();
@@ -880,17 +1322,20 @@ void command(char *text) {
   if ((!strcmp(cmd, "drive") && count >= 3 && count <= 5) ||
       (twist && count >= 4 && count <= 6)) {
     float x = 0, y = 0, w = 0;
-    long milliseconds = 1000, speed = 20;
+    long milliseconds = motion::defaultDriveMs, speed = motion::defaultSpeed;
     const unsigned timeIndex = twist ? 4 : 3;
     if (pwmMode || !parseFloat(words[1], x) || !parseFloat(words[2], y) ||
         (twist && !parseFloat(words[3], w)) ||
         (count > timeIndex && !parseInt(words[timeIndex], milliseconds)) ||
         (count > timeIndex + 1 && !parseInt(words[timeIndex + 1], speed)) ||
-        milliseconds < 50 || milliseconds > 3000 || speed < 1 || speed > 30 ||
-        std::fabs(x) > 1 || std::fabs(y) > 1 || std::fabs(w) > 1) {
-      Serial.println(
+        milliseconds < motion::minDurationMs ||
+        milliseconds > legacy::maxDurationMs || speed < 1 ||
+        speed > motion::maxSpeed || std::fabs(x) > 1 || std::fabs(y) > 1 ||
+        std::fabs(w) > 1) {
+      Serial.printf(
           "ERR: drive X Y [MS [SPEED]] or twist X Y W [MS [SPEED]]; weights "
-          "-1..1; time 50..3000ms; speed 1..30; speed mode only.");
+          "-1..1; time %u..%ums; speed 1..%d; speed mode only.\n",
+          motion::minDurationMs, legacy::maxDurationMs, motion::maxSpeed);
       return;
     }
     Serial.printf("Drive mixer=%s; orientation=%s.\n", mixerName(),
@@ -950,17 +1395,8 @@ void command(char *text) {
     return;
   }
   if (count == 1 && !strcmp(cmd, "arm")) {
-    if (!configured || broken || stopRetries) {
+    if (!armMovement())
       Serial.println("ERR: successful init required.");
-      return;
-    }
-    if (!sendSpeeds()) {
-      broken = true;
-      stopTest("FAULT: arm zero write.");
-      return;
-    }
-    enabled = true;
-    Serial.println("ARMED; no motion yet.");
     return;
   }
   if (count == 1 && !strcmp(cmd, "original")) {
@@ -977,10 +1413,12 @@ void command(char *text) {
     const int limit = pwmMode ? legacy::maxPwmDuty : legacy::maxCommand;
     if (!parseInt(words[1], channel) || !parseInt(words[2], speed) ||
         !parseInt(words[3], milliseconds) || channel < 1 || channel > 3 ||
-        speed < -limit || speed > limit || speed == 0 || milliseconds < 50 ||
-        milliseconds > 3000) {
-      Serial.println(
-          "ERR: check channel, mode's magnitude limit and time 50..3000ms.");
+        speed < -limit || speed > limit || speed == 0 ||
+        milliseconds < motion::minDurationMs ||
+        milliseconds > legacy::maxDurationMs) {
+      Serial.printf("ERR: channel 1..3; nonzero magnitude 1..%d in current "
+                    "mode; time %u..%ums.\n",
+                    limit, motion::minDurationMs, legacy::maxDurationMs);
       return;
     }
     int values[3] = {};
@@ -1029,14 +1467,21 @@ void pollInput() {
 // loop.
 void updateTest() {
   const uint32_t now = millis();
+  if (spinActive) {
+    if (!configured || !enabled || broken || pwmMode || !running)
+      stopTest("Spin cancelled: motion state changed.");
+    return; // Speed register holds the guarded request until explicit
+            // stop/fault.
+  }
   if (running) {
     if (now - began >= testMs) {
       if (!squarePattern.active) {
         stopTest("DONE; disarmed.");
         return;
       }
-      if (squarePattern.leg == 3) {
-        stopTest("SQUARE last leg ended; disarmed.");
+      if (squarePattern.leg == 3 && squarePattern.cycleLimit &&
+          squarePattern.cycles + 1 >= squarePattern.cycleLimit) {
+        stopTest("SQUARE last leg ended; disarmed.", true);
         if (!broken)
           Serial.println(
               "SQUARE DONE: four timed legs finished. Position not measured.");
@@ -1057,9 +1502,17 @@ void updateTest() {
         value = 0;
       squarePattern.pausing = true;
       squarePattern.pauseBegan =
-          millis(); // Pause begins after stop acknowledgment.
-      Serial.printf("SQUARE leg %u/4 ended; pause %ums.\n",
-                    squarePattern.leg + 1, squarePattern.pauseMs);
+          lastWriteEnded; // Stop acknowledgment, before logging/gap.
+      if (squarePattern.leg == 3) {
+        recordSquareCompletion();
+        showSquareStats();
+        Serial.printf("SQUARE CYCLE %lu complete; paused %ums before next "
+                      "forward. Position not measured.\n",
+                      (unsigned long)squarePattern.cycles,
+                      squarePattern.pauseMs);
+      } else
+        Serial.printf("SQUARE leg %u/4 ended; pause %ums.\n",
+                      squarePattern.leg + 1, squarePattern.pauseMs);
       return;
     }
     if (pwmMode && now - lastPwmRefresh >= legacy::pwmRefreshMs) {
@@ -1082,11 +1535,15 @@ void updateTest() {
       return;
     }
     if (now - squarePattern.pauseBegan >= squarePattern.pauseMs) {
-      ++squarePattern.leg;
+      squarePattern.leg = (squarePattern.leg + 1) % 4;
+      if (squarePattern.leg == 0) {
+        ++squareStats.attempts;
+        squarePattern.attemptOpen = true;
+      }
       squarePattern.pausing = false;
       const int *output = squarePattern.outputs[squarePattern.leg];
       if (!beginTimedOutput(output[0], output[1], output[2],
-                            squarePattern.sideMs)) {
+                            squarePattern.durations[squarePattern.leg])) {
         if (squarePattern.active)
           stopTest("FAULT: square next leg rejected; pattern cancelled.");
         return;
@@ -1106,19 +1563,22 @@ void updateTest() {
   }
 }
 
+#if defined(SWRM_ENABLE_LED_PANEL) && SWRM_ENABLE_LED_PANEL
 // Declare an instance of a direct memory access display for writing to the LED
 // board
 MatrixPanel_I2S_DMA *dma_display = nullptr;
 
+#endif
 void setup() {
   Serial.begin(legacy::baud);
   Wire.begin(legacy::sda, legacy::scl);
   Wire.setClock(legacy::busHz);
   Wire.setTimeOut(legacy::transactionTimeoutMs);
   delay(100); // Original setup's initial I2C pause.
+  showRobotProfile();
   showHelp(); // No driver writes or automatic movement at boot.
   Serial.println("DISARMED. Enter init to test original driver settings.");
-
+#if defined(SWRM_ENABLE_LED_PANEL) && SWRM_ENABLE_LED_PANEL
   // Begin Initializing LED board
 
   // init pin connections between esp32 and the LED board
@@ -1156,10 +1616,26 @@ void setup() {
 
   // Fill the screen with white pixels
   dma_display->fillScreen(dma_display->color565(255, 255, 255));
+#endif
+  beginRobotNetwork(); // Networking alone never initializes or arms motors.
 }
 
-void loop() {
+// Process a queued stop before advancing a corner/cycle boundary into motion.
+void updateRobotMovement() {
+  const auto pending = pendingRobotCommand.exchange(robot::Command::none);
+  const char *word = pending == robot::Command::stop     ? "stop"
+                     : pending == robot::Command::square ? "square"
+                     : pending == robot::Command::spin   ? "spin"
+                                                         : nullptr;
+  if (word) {
+    const auto result = handleRobotCommand(word);
+    Serial.println(robot::resultName(result));
+    reportRobotCommandResult(pending, result);
+  }
   updateTest();
+}
+void loop() {
   pollInput();
+  updateRobotMovement();
   delay(1);
 }

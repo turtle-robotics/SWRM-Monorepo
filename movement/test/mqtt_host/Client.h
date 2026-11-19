@@ -1,0 +1,13 @@
+#pragma once
+#include "Arduino.h"
+#include "IPAddress.h"
+class Client : public Print {
+public:
+    virtual int connect(const char*,uint16_t)=0;
+    virtual int connect(IPAddress,uint16_t)=0;
+    virtual uint8_t connected()=0;
+    virtual int available()=0;
+    virtual int read()=0;
+    virtual void stop()=0;
+    virtual void flush()=0;
+};

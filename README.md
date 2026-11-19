@@ -5,6 +5,10 @@ git history is shared across all of them. This allows for an easy way to find
 the SWRM code in the Turtle organization while not cluttering the main Turtle
 GitHub organization at the same time.
 
+## Robot movement tests
+
+Use **[movement/legacy-motor-test](movement/legacy-motor-test)** for robot testing. New teammates should start with the [movement setup and testing guide](movement/README.md): installation, USB connection, upload, the robot terminal, initialization, orientation/mixer settings, driving, and squares.
+
 ## Creating a new component
 When a new component of the SWRM project needs to be created, a new subfolder
 for that component should be created in the root of this repository. The 

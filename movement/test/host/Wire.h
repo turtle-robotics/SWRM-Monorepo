@@ -5,7 +5,10 @@
 #include <deque>
 #include <array>
 struct HostWire {
+    unsigned transactionDelayMs = 0; // Simulate an actual bus transaction, including rollover.
+    uint32_t transactionEnded = 0;
     bool ack = true;
+    std::deque<int> endResults; // Optional per-transaction fault injection; empty = normal ack behavior.
     unsigned readLength = 12;
     unsigned readRequests = 0; // Proves the first-day PWM mode does not need encoder reads.
     int32_t encoder[4] = {};
@@ -22,7 +25,13 @@ struct HostWire {
     size_t write(uint8_t b) { tx.push_back(b); return 1; }
     size_t write(const uint8_t* b, size_t n) { tx.insert(tx.end(), b, b+n); return n; }
     int endTransmission(bool = true) {
+        delay(transactionDelayMs);
+        transactionEnded = millis();
         if (!ack) return 4;
+        if (!endResults.empty()) {
+            const int result=endResults.front(); endResults.pop_front();
+            if (result) return result;
+        }
         if (tx.size() > 1) writes.push_back(tx);
         if (tx.size() == 5 && (tx[0] == 31 || tx[0] == 51)) {
             activeReg = tx[0];
