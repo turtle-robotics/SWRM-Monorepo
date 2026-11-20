@@ -5,7 +5,7 @@
 namespace network {
 constexpr const char* wifiSsid = "TAMU_IoT";
 constexpr const char* wifiPassword = "";
-constexpr const char* mqttHost = "10.251.20.11"; // Lead's laptop; update when its IP changes.
+constexpr const char* mqttHost = "10.251.169.194"; // Lead's laptop; update when its IP changes.
 constexpr unsigned mqttPort = 1883;
 constexpr unsigned ledPin = 2; // Original on/off onboard LED, not the HUB75 panel.
 constexpr unsigned wifiRetryMs = 10000, mqttRetryMs = 2000;
