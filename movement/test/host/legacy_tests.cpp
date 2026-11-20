@@ -133,11 +133,14 @@ int main() {
     assert(Wire.readRequests == reads && running);
     freshLegacy(); cmdLegacy("motor 1 10 1000"); assert(Wire.writes.empty());
     cmdLegacy("init"); assert(configured && !enabled && !running && !broken);
-    assert(Wire.writes.size() == 6);
-    assert((Wire.writes[0] == std::vector<uint8_t>{20,1}));
-    assert((Wire.writes[1] == std::vector<uint8_t>{21,1}));
+    assert(Wire.writes.size() == 10);
+    // Explicit init requires acknowledged zeros before changing driver settings.
     for (unsigned i = 0; i < 4; ++i)
-        assert((Wire.writes[2+i] == std::vector<uint8_t>{uint8_t(51+i),0}));
+        assert((Wire.writes[i] == std::vector<uint8_t>{uint8_t(51+i),0}));
+    assert((Wire.writes[4] == std::vector<uint8_t>{20,1}));
+    assert((Wire.writes[5] == std::vector<uint8_t>{21,1}));
+    for (unsigned i = 0; i < 4; ++i)
+        assert((Wire.writes[6+i] == std::vector<uint8_t>{uint8_t(51+i),0}));
     auto writes = Wire.writes.size(); hostTime += 10000; loop();
     assert(Wire.writes.size() == writes); // No alternating or repeated idle-mode writes.
     cmdLegacy("arm"); cmdLegacy("motor 1 10 1000");
@@ -200,9 +203,10 @@ int main() {
     assert(!configured && !enabled && selectedType == 2 && selectedPolarity == 1 && !singleWrites);
     cmdLegacy("arm"); assert(!enabled);
     cmdLegacy("init"); assert(configured);
-    assert((Wire.writes[0] == std::vector<uint8_t>{20,2}));
-    assert((Wire.writes[1] == std::vector<uint8_t>{21,1}));
-    assert((Wire.writes[2] == std::vector<uint8_t>{51,0,0,0,0}));
+    assert((Wire.writes[0] == std::vector<uint8_t>{51,0,0,0,0}));
+    assert((Wire.writes[1] == std::vector<uint8_t>{20,2}));
+    assert((Wire.writes[2] == std::vector<uint8_t>{21,1}));
+    assert((Wire.writes[3] == std::vector<uint8_t>{51,0,0,0,0}));
     cmdLegacy("arm"); cmdLegacy("profile 1 0"); assert(selectedType == 2 && selectedPolarity == 1);
     cmdLegacy("motor 2 10 1000"); assert(running && logicalMotor(0) == 0 && logicalMotor(1) == 10);
     assert((Wire.writes.back() == std::vector<uint8_t>{51,0,246,0,0}));

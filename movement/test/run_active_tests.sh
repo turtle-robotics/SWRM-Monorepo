@@ -19,6 +19,12 @@ done
     -c "$movement_dir/legacy-motor-test/lib/PubSubClient/src/PubSubClient.cpp" -o "$test_dir/pubsubclient.o"
 for robot_id in 1 2; do
     "${CXX:-clang++}" -std=c++17 -Wall -Wextra -Werror -DSWRM_ROBOT_ID="$robot_id" \
+        -I"$movement_dir/test/host" "$movement_dir/test/host/remote_recovery_tests.cpp" -o "$test_dir/recovery_$robot_id"
+    "$test_dir/recovery_$robot_id"
+    "${CXX:-clang++}" -std=c++17 -Wall -Wextra -Werror -DSWRM_ROBOT_ID="$robot_id" \
+        -I"$movement_dir/test/host" "$movement_dir/test/host/battery_boot_tests.cpp" -o "$test_dir/battery_$robot_id"
+    "$test_dir/battery_$robot_id"
+    "${CXX:-clang++}" -std=c++17 -Wall -Wextra -Werror -DSWRM_ROBOT_ID="$robot_id" \
         -I"$movement_dir/test/mqtt_host" -I"$movement_dir/test/host" \
         -I"$movement_dir/legacy-motor-test/lib/PubSubClient/src" \
         "$movement_dir/test/host/mqtt_controller_tests.cpp" "$test_dir/pubsubclient.o" -o "$test_dir/mqtt_$robot_id"

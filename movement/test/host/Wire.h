@@ -7,6 +7,7 @@
 struct HostWire {
     unsigned transactionDelayMs = 0; // Simulate an actual bus transaction, including rollover.
     uint32_t transactionEnded = 0;
+    void (*transactionHook)() = nullptr; // Inject an asynchronous command during a bus write.
     bool ack = true;
     std::deque<int> endResults; // Optional per-transaction fault injection; empty = normal ack behavior.
     unsigned readLength = 12;
@@ -25,6 +26,7 @@ struct HostWire {
     size_t write(uint8_t b) { tx.push_back(b); return 1; }
     size_t write(const uint8_t* b, size_t n) { tx.insert(tx.end(), b, b+n); return n; }
     int endTransmission(bool = true) {
+        if (transactionHook) transactionHook();
         delay(transactionDelayMs);
         transactionEnded = millis();
         if (!ack) return 4;

@@ -1,5 +1,5 @@
 /*
-V15 Kiwi movement: +X right, +Y forward, +W clockwise; M2 inversion at I2C.
+V16 Kiwi movement: +X right, +Y forward, +W clockwise; M2 inversion at I2C.
 init leaves disarmed. Explicit square/spin auto-arm through the existing guard;
 stop cancels all motion/queued starts. Settings and networking are separate
 files. See ../README.md for setup, calibration defaults, diagnostics and test
@@ -94,6 +94,14 @@ bool configured = false, enabled = false, running = false, broken = false;
 bool spinActive =
     false; // Continuous speed hold; cancelled by the common stop/fault path.
 std::atomic<robot::Command> pendingRobotCommand{robot::Command::none};
+std::atomic<bool> pendingStatusRequest{false}, maintenanceBusy{false};
+// Preserve a concurrently queued stop while cancelling older starts/init.
+static void clearPendingAction() {
+  auto pending = pendingRobotCommand.load();
+  if (pending != robot::Command::stop)
+    pendingRobotCommand.compare_exchange_strong(pending, robot::Command::none);
+}
+static void publishRobotState(bool force = false);
 // V3: pending, operator-selected comparisons. Edits are allowed only while idle
 // and disarmed, and invalidate initialization. No edit automatically runs
 // motors.
@@ -564,7 +572,7 @@ void stopTest(const char *reason, bool squareFinished = false) {
 // preserving which register failed. This is not an address-only connectivity
 // check.
 void initialize() {
-  pendingRobotCommand.store(robot::Command::none);
+  clearPendingAction();
   if (spinActive)
     stopTest("Spin cancelled by initialization.");
   if (squarePattern.active)
@@ -684,7 +692,7 @@ void showEncoders() {
 
 void showHelp() {
   Serial.println(
-      "KIWI MONOREPO LAB v15: shared profile; square/stop/spin; "
+      "KIWI MONOREPO LAB v16: battery boot initialization; square/stop/spin; "
       "orientation=lab (+Y forward); M2 reversed; mixer=legacy; DISARMED.");
   Serial.println("init | status | arm | stop | ! | help");
   Serial.println("voltage | enc (idle/disarmed only; read driver "
@@ -936,7 +944,7 @@ const char *robot::resultName(robot::Result result) {
   case Result::queued:
     return "QUEUED";
   case Result::unknown:
-    return "ERR: unknown command; expected square, stop, spin";
+    return "ERR: unknown command; expected square, stop, spin, init, status";
   case Result::notReady:
     return "ERR: successful init required";
   case Result::busy:
@@ -944,6 +952,10 @@ const char *robot::resultName(robot::Result result) {
   case Result::invalidSettings:
     return "ERR: invalid settings; use lab/legacy, calibrated driver settings "
            "and unity global trims";
+  case Result::ready:
+    return "READY; disarmed";
+  case Result::reported:
+    return "STATUS";
   case Result::fault:
     return "FAULT: latched; inspect status; explicit init required, no "
            "automatic recovery";
@@ -952,8 +964,33 @@ const char *robot::resultName(robot::Result result) {
 }
 
 bool initializeRobotMovement() {
-  initialize();
-  return configured && !broken;
+  if (enabled || running || squarePattern.active || spinActive || stopRetries ||
+      pendingRobotCommand.load() == robot::Command::stop ||
+      maintenanceBusy.exchange(true))
+    return false;
+  clearPendingAction();
+  // Preserve the old fault snapshot for MQTT before explicit init clears it.
+  publishRobotState(true);
+  bool success = false;
+  if (!sendSpeeds()) {
+    configured = false;
+    broken = true;
+    stopTest("FAULT: init preflight zero failed; configuration not attempted.");
+  } else if (pendingRobotCommand.load() == robot::Command::stop) {
+    stopTest("Initialization cancelled by stop; remains disarmed.");
+  } else {
+    initialize();
+    success = configured && !broken;
+    if (pendingRobotCommand.load() == robot::Command::stop) {
+      stopTest("Stop received during initialization; remains disarmed.");
+      success = false;
+    }
+  }
+  clearPendingAction(); // No start received before/during recovery may run
+                        // later.
+  maintenanceBusy.store(false);
+  publishRobotState(true);
+  return success;
 }
 void stopRobotMovement() { stopTest("STOPPED; disarmed."); }
 
@@ -961,11 +998,17 @@ robot::Result queueRobotCommand(const char *bytes, std::size_t length) {
   const auto cmd = robot::parseCommand(bytes, length);
   if (cmd == robot::Command::none)
     return robot::Result::unknown;
+  if (cmd == robot::Command::status) {
+    pendingStatusRequest.store(true);
+    return robot::Result::queued;
+  }
   if (cmd == robot::Command::stop) {
     pendingRobotCommand.store(
         cmd); // Replace every queued start; never wait for space.
     return robot::Result::queued;
   }
+  if (maintenanceBusy.load())
+    return robot::Result::busy;
   auto empty = robot::Command::none;
   return pendingRobotCommand.compare_exchange_strong(empty, cmd)
              ? robot::Result::queued
@@ -980,15 +1023,27 @@ robot::Result handleRobotCommand(const char *bytes, std::size_t length) {
   const auto cmd = robot::parseCommand(bytes, length);
   if (cmd == robot::Command::none)
     return Result::unknown;
+  if (cmd == robot::Command::status) {
+    publishRobotState(true);
+    return Result::reported;
+  }
   if (cmd == robot::Command::stop) {
     stopRobotMovement();
     return broken ? Result::fault : Result::stopped;
+  }
+  if (cmd == robot::Command::init) {
+    if (enabled || running || squarePattern.active || spinActive ||
+        stopRetries || maintenanceBusy.load() ||
+        pendingRobotCommand.load() == robot::Command::stop)
+      return Result::busy;
+    const bool success = initializeRobotMovement();
+    return success ? Result::ready : (broken ? Result::fault : Result::busy);
   }
   if (broken || stopRetries)
     return Result::fault;
   if (!configured)
     return Result::notReady;
-  if (running || squarePattern.active || spinActive ||
+  if (running || squarePattern.active || spinActive || maintenanceBusy.load() ||
       pendingRobotCommand.load() == robot::Command::stop)
     return Result::busy;
   if (pwmMode || singleWrites || selectedMixer != Mixer::legacy ||
@@ -1061,7 +1116,7 @@ void command(char *text) {
     return;
   const char *cmd = words[0];
   if (count == 1 && (!strcmp(cmd, "square") || !strcmp(cmd, "spin") ||
-                     !strcmp(cmd, "stop"))) {
+                     !strcmp(cmd, "stop") || !strcmp(cmd, "init"))) {
     Serial.println(robot::resultName(handleRobotCommand(cmd)));
     return;
   }
@@ -1390,10 +1445,6 @@ void command(char *text) {
         "Settings stored; no driver write yet. Enter init before arm.");
     return;
   }
-  if (count == 1 && !strcmp(cmd, "init")) {
-    initialize();
-    return;
-  }
   if (count == 1 && !strcmp(cmd, "arm")) {
     if (!armMovement())
       Serial.println("ERR: successful init required.");
@@ -1575,9 +1626,22 @@ void setup() {
   Wire.setClock(legacy::busHz);
   Wire.setTimeOut(legacy::transactionTimeoutMs);
   delay(100); // Original setup's initial I2C pause.
-  showRobotProfile();
-  showHelp(); // No driver writes or automatic movement at boot.
+#ifdef SWRM_ENABLE_MQTT
+  // Battery-only startup: configure once and request zero, never arm/start.
+  // Share the zero-first guarded init used by deliberate recovery. A failure
+  // remains latched. Reconnect paths never call initialization.
+  Serial.println("BOOT INIT: one driver configuration attempt; no motion.");
+  initializeRobotMovement();
+  Serial.println(
+      configured && !broken
+          ? "BOOT READY: initialized, DISARMED; awaiting an explicit command."
+          : "BOOT FAULT: movement disabled; inspect driver/power before "
+            "recovery.");
+#else
   Serial.println("DISARMED. Enter init to test original driver settings.");
+#endif
+  showRobotProfile();
+  showHelp(); // Read-only instructions; initialization above never arms/moves.
 #if defined(SWRM_ENABLE_LED_PANEL) && SWRM_ENABLE_LED_PANEL
   // Begin Initializing LED board
 
@@ -1618,21 +1682,73 @@ void setup() {
   dma_display->fillScreen(dma_display->color565(255, 255, 255));
 #endif
   beginRobotNetwork(); // Networking alone never initializes or arms motors.
+  publishRobotState(true);
 }
 
-// Process a queued stop before advancing a corner/cycle boundary into motion.
+// Snapshot only from the motor loop; network code never reads live motor
+// globals.
+robot::Status getRobotStatus() {
+  robot::Status value;
+  value.configured = configured;
+  value.armed = enabled;
+  value.running = running;
+  value.fault = broken;
+  value.square = squarePattern.active;
+  value.paused = squarePattern.active && squarePattern.pausing;
+  value.spin = spinActive;
+  value.retries = stopRetries;
+  value.error = lastError;
+  value.reg = lastReg;
+  value.firstError = firstWriteFault.valid ? firstWriteFault.error : 0;
+  value.firstReg = firstWriteFault.valid ? firstWriteFault.reg : 0;
+  value.faultLeg = firstWriteFault.valid ? firstWriteFault.leg : 0;
+  value.cycles = squareStats.completed;
+  value.ready =
+      configured && !broken && !enabled && !running && !squarePattern.active &&
+      !spinActive && !stopRetries && !maintenanceBusy.load() && !pwmMode &&
+      !singleWrites && selectedMixer == Mixer::legacy &&
+      selectedOrientation == DriveOrientation::lab &&
+      selectedType == legacy::type && selectedPolarity == legacy::polarity &&
+      selectedClock == legacy::busHz && !writeGapMs;
+  for (float trim : motorTrim)
+    if (trim != 1)
+      value.ready = false;
+  return value;
+}
+static void publishRobotState(bool force) {
+  static robot::Status previous;
+  static bool havePrevious = false;
+  static uint32_t sequence = 0;
+  auto value = getRobotStatus();
+  const bool changed =
+      !havePrevious || value.ready != previous.ready ||
+      value.configured != previous.configured ||
+      value.armed != previous.armed || value.running != previous.running ||
+      value.fault != previous.fault || value.square != previous.square ||
+      value.paused != previous.paused || value.spin != previous.spin ||
+      value.retries != previous.retries || value.error != previous.error ||
+      value.reg != previous.reg || value.firstError != previous.firstError ||
+      value.firstReg != previous.firstReg ||
+      value.faultLeg != previous.faultLeg || value.cycles != previous.cycles;
+  if (force || changed) {
+    value.sequence = ++sequence;
+    previous = value;
+    havePrevious = true;
+    reportRobotState(value);
+  }
+}
+
+// Stop/action inbox is processed before scheduling; status requests cannot
+// consume, replace or delay a queued stop or init/start action.
 void updateRobotMovement() {
   const auto pending = pendingRobotCommand.exchange(robot::Command::none);
-  const char *word = pending == robot::Command::stop     ? "stop"
-                     : pending == robot::Command::square ? "square"
-                     : pending == robot::Command::spin   ? "spin"
-                                                         : nullptr;
-  if (word) {
-    const auto result = handleRobotCommand(word);
+  if (pending != robot::Command::none) {
+    const auto result = handleRobotCommand(robot::commandName(pending));
     Serial.println(robot::resultName(result));
     reportRobotCommandResult(pending, result);
   }
   updateTest();
+  publishRobotState(pendingStatusRequest.exchange(false));
 }
 void loop() {
   pollInput();

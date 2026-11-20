@@ -1,15 +1,17 @@
 #pragma once
 #include "Client.h"
 #include <functional>
+#include <string>
 constexpr unsigned WIFI_STA=1, WL_CONNECTED=3, ARDUINO_EVENT_WIFI_STA_DISCONNECTED=5;
 using WiFiEvent_t=unsigned;
 struct WiFiEventInfo_t {};
 struct HostWiFi {
-    unsigned state=0, begins=0;
+    unsigned state=0, begins=0, selectedMode=0;
     const char* ssid=nullptr; const char* password=nullptr;
     std::function<void(WiFiEvent_t,WiFiEventInfo_t)> event;
     unsigned status() const { return state; }
-    void mode(unsigned) {}
+    void mode(unsigned selected) { selectedMode=selected; }
+    std::string macAddress() const { return "02:00:00:00:00:01"; }
     void begin(const char* name,const char* pass) { ++begins; ssid=name; password=pass; }
     void onEvent(std::function<void(WiFiEvent_t,WiFiEventInfo_t)> callback) { event=callback; }
     void loseConnection() { state=0; if (event) event(ARDUINO_EVENT_WIFI_STA_DISCONNECTED,{}); }
