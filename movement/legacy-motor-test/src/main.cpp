@@ -15,12 +15,15 @@ implemented.
 #include "../include/mqtt_controller.h"
 #include "../include/robot_commands.h"
 #include "../include/robot_settings.h"
+#include "common.h"
+#include "showCase.h"
 #include <atomic>
 #include <cmath> // Dot-product wheel mixing uses sin/cos; inputs are checked for NaN/Inf.
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <initializer_list> // Enables iterating over the three candidate motor values.
+#include "frames.h"
 
 namespace legacy {
 constexpr uint8_t address = 0x34; // Original Hiwonder device address.
@@ -57,6 +60,8 @@ constexpr unsigned b1 = 27;
 constexpr unsigned r2 = 14;
 constexpr unsigned g2 = 12;
 constexpr unsigned b2 = 13;
+
+
 
 // Other pins
 constexpr unsigned a = 23; // yes
@@ -1662,6 +1667,8 @@ void setup() {
   // set I2S clock speed
   mxconfig.i2sspeed = HUB75_I2S_CFG::HZ_10M;
 
+
+  
   // Board driver
   mxconfig.driver = HUB75_I2S_CFG::FM6124;
 
@@ -1751,6 +1758,27 @@ void updateRobotMovement() {
   publishRobotState(pendingStatusRequest.exchange(false));
 }
 void loop() {
+  static int frameOffset = 0;
+  static bool frameFlipped = false;
+  if (frameOffset < 64 && !frameFlipped) {
+   drawBitMap(25 + frameOffset, 0, 64, 64, frame1);
+   delay(250);
+   frameOffset++;
+   drawBitMap(25 + frameOffset, 0, 64, 64, frame2);
+   delay(250);
+   frameOffset++;
+  } else {
+    frameFlipped = true;
+    drawFlippedBitMap(frameOffset, 0, 64, 64, frame2);
+    delay(250);
+    frameOffset--;
+    drawFlippedBitMap(frameOffset, 0, 64, 64, frame1);
+    delay(250);
+    frameOffset--;
+    if (frameOffset == 20) {
+      frameFlipped = false;
+    }
+  }
   pollInput();
   updateRobotMovement();
   delay(1);
